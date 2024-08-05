@@ -1,3 +1,5 @@
+use std::net::TcpListener;
+
 // `tokio::test` is the testing equivalent of `tokio::main`.
 // It also spares you from having to specify the `#[test]` attribute.
 //
@@ -6,7 +8,7 @@
 #[tokio::test]
 async fn health_check_works() {
     // Arrange
-    spawn_app();
+    let address = spawn_app();
 
     // we need to bring in request
     // to perform HTTP requests against our app
@@ -14,7 +16,7 @@ async fn health_check_works() {
 
     // Act
     let response = client
-        .get("http://127.0.0.1:8000/health_check")
+        .get(&format!("{}/health_check", &address))
         .send()
         .await
         .expect("Failed to execute request");
@@ -24,9 +26,19 @@ async fn health_check_works() {
     assert_eq!(Some(0), response.content_length());
 }
 
-// Launch app in background
-fn spawn_app() {
-    let server = zero2prod::run().expect("failed to bind address");
+fn spawn_app() -> String {
+    // “Port 0 is special-cased at the OS level:
+    //  trying to bind port 0 will trigger an OS scan for an
+    //  available port which will then be bound to the application”
+    let address = "127.0.0.1:0";
+
+    let listener = TcpListener::bind(address).expect("Failed to bind random port");
+    let port = listener.local_addr().unwrap().port();
+
+    let server = zero2prod::run(listener).expect("failed to bind address");
 
     let _ = tokio::spawn(server);
+
+    // return app address to the caller
+    format!("127.0.0.1:{}", port)
 }
