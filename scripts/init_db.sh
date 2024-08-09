@@ -30,27 +30,31 @@ fi
 
 
 # Check if a custom user has been set, otherwise default to 'postgres'
-DB_USER=${POSTGRES_USER:=postgres}
+DB_USER="${POSTGRES_USER:=postgres}"
 
 # Check if a custom password has been set, otherwise default to 'password'
-DB_PASSWORD=${POSTGRES_PASSWORD:=password}
+DB_PASSWORD="${POSTGRES_PASSWORD:=password}"
 # Check if a custom database name has been set, otherwise default to 'newsletter'
-DB_NAME=${POSTGRES_DB:=newsletter}
+DB_NAME="${POSTGRES_DB:=newsletter}"
 # Check if a custom port has been set, otherwise default to '5432'
-DB_PORT=${POSTGRES_PORT:=5432}
+DB_PORT="${POSTGRES_PORT:=5432}"
 
 # Check if a custom host has been set, otherwise default to 'localhost'
-DB_HOST=${POSTGRES_HOST:=localhost}
+DB_HOST="${POSTGRES_HOST:=localhost}"
 
 # Launch postgres using Docker
-docker run \
-  -e POSTGRES_USER="${DB_USER}" \
-  -e POSTGRES_PASSWORD="${DB_PASSWORD}" \
-  -e POSTGRES_DB="${DB_NAME}" \
-  -p "${DB_PORT}":5432 \
-  -d postgres:latest \
-  postgres -N 1000
-  # ^ Increased maximum number of connections for testing purposes”
+# Allow to skip docker if dockerized postgres is already running
+if [[ -z "${SKIP_DOCKER}" ]]
+then
+  docker run \
+    -e POSTGRES_USER="${DB_USER}" \
+    -e POSTGRES_PASSWORD="${DB_PASSWORD}" \
+    -e POSTGRES_DB="${DB_NAME}" \
+    -p "${DB_PORT}":5432 \
+    -d postgres:latest \
+    postgres -N 1000
+    # ^ Increased maximum number of connections for testing purposes”
+fi
 
 
 # Keep pinging Postgres until it's ready to accept commands
@@ -66,11 +70,19 @@ done
 DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
 export DATABASE_URL
 sqlx database create
+# Rum migration
+sqlx migrate run
+
+>&2 echo "Tables migrated.... Ready"
 
 
 
+############## HOW TO RUN THIS FILE ##############
 # to make this file executable, run cmd below in your terminal
 # chmod +x scripts/init_db.sh
 
 # to run this file, run cmd below
 # ./scripts/init_db.sh
+
+# options to run this script to skip re-creating docker image
+# SKIP_DOCKER=true ./scripts/init_db.sh

@@ -1,4 +1,5 @@
 use std::net::TcpListener;
+use zero2prod::startup::run;
 
 fn spawn_app() -> String {
     // “Port 0 is special-cased at the OS level:
@@ -9,7 +10,7 @@ fn spawn_app() -> String {
     let listener = TcpListener::bind(address).expect("Failed to bind random port");
     let port = listener.local_addr().unwrap().port();
 
-    let server = zero2prod::run(listener).expect("failed to bind address");
+    let server = run(listener).expect("failed to bind address");
 
     let _ = tokio::spawn(server);
 
