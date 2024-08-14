@@ -1,5 +1,6 @@
 use actix_web::{web, HttpResponse};
 
+// this is a Library create because it doesn't contain a main function
 #[derive(serde::Deserialize)]
 pub struct FormData {
     email: String,

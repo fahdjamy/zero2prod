@@ -1,6 +1,7 @@
 use std::net::TcpListener;
 use zero2prod::startup::run;
 
+// this is a binary crate because it contains a main function
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
     let port = "8001";
