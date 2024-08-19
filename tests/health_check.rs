@@ -25,7 +25,6 @@ async fn spawn_app() -> TestApp {
     // create a new Database on every call to this function
     configuration.database.database_name = Uuid::new_v4().to_string();
 
-    // Omitting the database name we connect to the Postgres instance, not a specific logical database.
     let conn_pool = configure_database(&configuration.database).await;
 
     let server = run(listener, conn_pool.clone()).expect("failed to bind address");
@@ -128,9 +127,12 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
 
 pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
     // Create database
+    // Omitting the db name, we connect to the Postgres instance, not a specific logical database.
     let mut connection = PgConnection::connect(&config.connection_string_without_db())
         .await
         .expect("Failed to connect to Postgres");
+
+    // create a new database based on the database_name in config
     connection
         .execute(format!(r#"CREATE DATABASE "{}";"#, config.database_name).as_str())
         .await

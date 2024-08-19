@@ -17,6 +17,7 @@ impl DatabaseSettings {
         )
     }
 
+    // helps us connect to the database instance rather than a specific db
     pub fn connection_string_without_db(&self) -> String {
         format!(
             "postgres://{}:{}@{}:{}",
