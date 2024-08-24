@@ -2,6 +2,7 @@
 use actix_web::{web, HttpResponse};
 use chrono::Utc;
 use sqlx::PgPool;
+use tracing::Instrument;
 use uuid::Uuid;
 
 // this is a Library create because it doesn't contain a main function
@@ -19,21 +20,38 @@ pub async fn subscribe(
     // Retrieving a connection from the application state!
     db_pool: web::Data<PgPool>,
 ) -> HttpResponse {
+    let request_id = Uuid::new_v4();
     let event = String::from("creatingNewSubscriber");
-    let req_id = Uuid::new_v4();
-    log::info!(
-        "requestId={}, event={}, name={}, email={}",
-        event,
-        req_id,
-        form.name,
-        form.email,
+
+    // Spans, like logs, have an associated level
+    // `info_span` creates a span at the info-level
+    //
+    // You can enter (and exit) a span multiple times. Closing, instead, is final:
+    // it happens when the span itself is dropped.
+    // This comes pretty handy when you have a unit of work that can be paused and then resumed -
+    // e.g. an asynchronous task!
+    let request_span = tracing::info_span!(
+        "",
+        %request_id,
+        %event,
+        // Notice that we prefixed all of them with a % symbol:
+        // we are telling tracing to use their Display implementation for logging purposes
+        subscriber_name = %form.name,
+        subscriber_email = %form.email
     );
+
+    let _request_span_guard = request_span.enter();
 
     // `Result` has two variants: `Ok` and `Err`.
     // The first for successes, the second for failures.
-    // We use a `match` statement to choose what to do based
-    // on the outcome.
-    // We will talk more about `Result` going forward!
+
+    // We do not call `.enter` on query_span!
+    // `.instrument` takes care of it at the right moments
+    // in the query future lifetime
+    let query_span = tracing::info_span!(
+        "query=Creating user in DB ",
+        %event,
+    );
 
     match sqlx::query!(
         r#"
@@ -49,20 +67,20 @@ pub async fn subscribe(
     // wrapped by `web::Data`.
     // Using the pool as a drop-in replacement for PgConnection
     .execute(db_pool.get_ref())
+    .instrument(query_span)
     .await
     {
-        Ok(_) => {
-            log::info!(
-                "requestId={}, event={}, message={}",
-                req_id,
-                event,
-                String::from("Subscriber created")
-            );
-            HttpResponse::Ok().finish()
-        }
+        Ok(_) => HttpResponse::Ok().finish(),
         Err(err) => {
-            log::error!("requestId={}, failed to execute query: {:?}", req_id, err);
+            tracing::error!(
+                "requestId={}, failed to execute query: {:?}",
+                request_id,
+                err
+            );
             HttpResponse::InternalServerError().finish()
         }
     }
+
+    // `_request_span_guard` is dropped at the end of `subscribe`
+    // That's when we "exit" the span
 }

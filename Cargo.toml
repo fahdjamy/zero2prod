@@ -19,10 +19,20 @@ uuid = {version = "1.10.0", features = ["v4"]}
 actix-web = "4"
 reqwest = "0.12.5"
 tokio = {version = "1", features = ["macros", "rt-multi-thread"]}
+# We need the optional `derive` feature to use `serde`'s procedural macros:
+# `#[derive(Serialize)]` and `#[derive(Deserialize)]`.
+# The feature is not enabled by default to avoid pulling in
+# unnecessary dependencies for projects that do not need it.
 serde = { version = "1.0.204", features = ["derive"] }
-log = "0.4.22"
-# prints log records to the terminal in format "[<timestamp> <level> <module path>] <log message>"
-env_logger = "0.11.5"
+
+# replace log with tracing for richer log messages
+tracing = { version = "0.1.40", features = ["log"] }
+tracing-subscriber = {version = "0.3.18", features = ["registry", "env-filter"]}
+tracing-bunyan-formatter = "0.3.9"
+# tracing does not emit tracing events out of the box and does not provide a feature flag to enable this behaviour.
+# If we want it, we need to explicitly register a logger implementation to
+# redirect logs to our tracing subscriber for processing. thus this crate
+tracing-log = "0.2.0"
 
 # Using table-like toml syntax to avoid a super-long line!
 [dependencies.sqlx]
@@ -36,9 +46,3 @@ features = [
     "chrono", # “adds support for mapping SQL timestamptz to the DateTime<T> type from the chrono crate”
     "migrate" # “gives us access to the same functions used under the hood by sqlx-cli to manage migrations”
 ]
-
-# We need the optional `derive` feature to use `serde`'s procedural macros:
-# `#[derive(Serialize)]` and `#[derive(Deserialize)]`.
-# The feature is not enabled by default to avoid pulling in
-# unnecessary dependencies for projects that do not need it.
-serde = { version = "1", features = ["derive"]}
