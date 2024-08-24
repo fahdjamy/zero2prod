@@ -19,6 +19,16 @@ pub async fn subscribe(
     // Retrieving a connection from the application state!
     db_pool: web::Data<PgPool>,
 ) -> HttpResponse {
+    let event = String::from("creatingNewSubscriber");
+    let req_id = Uuid::new_v4();
+    log::info!(
+        "requestId={}, event={}, name={}, email={}",
+        event,
+        req_id,
+        form.name,
+        form.email,
+    );
+
     // `Result` has two variants: `Ok` and `Err`.
     // The first for successes, the second for failures.
     // We use a `match` statement to choose what to do based
@@ -41,9 +51,17 @@ pub async fn subscribe(
     .execute(db_pool.get_ref())
     .await
     {
-        Ok(_) => HttpResponse::Ok().finish(),
-        Err(e) => {
-            println!("failed to execute query: {}", e);
+        Ok(_) => {
+            log::info!(
+                "requestId={}, event={}, message={}",
+                req_id,
+                event,
+                String::from("Subscriber created")
+            );
+            HttpResponse::Ok().finish()
+        }
+        Err(err) => {
+            log::error!("requestId={}, failed to execute query: {:?}", req_id, err);
             HttpResponse::InternalServerError().finish()
         }
     }
