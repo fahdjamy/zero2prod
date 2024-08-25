@@ -9,8 +9,20 @@ use zero2prod::telemetry::{get_subscriber, init_subscriber};
 
 // Ensure that the `tracing` stack is only initialised once using `once_cell`
 static TRACING: Lazy<()> = Lazy::new(|| {
-    let subscriber = get_subscriber("test".into(), "debug".into());
-    init_subscriber(subscriber);
+    let subscriber_name = "test".into();
+    let filter_log_level = "debug".into();
+    // We cannot assign the output of `get_subscriber` to a variable based on the
+    // value TEST_LOG` because the sink is part of the type returned by
+    // `get_subscriber`, therefore they are not the same type. We could work around
+    // it, but this is the most straight-forward way of moving forward.
+
+    if std::env::var("TEST_LOG").is_ok() {
+        let subscriber = get_subscriber(subscriber_name, filter_log_level, std::io::stdout);
+        init_subscriber(subscriber);
+    } else {
+        let subscriber = get_subscriber(subscriber_name, filter_log_level, std::io::sink);
+        init_subscriber(subscriber);
+    };
 });
 
 pub struct TestApp {

@@ -9,7 +9,7 @@ use zero2prod::telemetry::{get_subscriber, init_subscriber};
 // this is a binary crate because it contains a main function
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
-    let subscriber = get_subscriber("zero2prod".into(), "info".into());
+    let subscriber = get_subscriber("zero2prod".into(), "info".into(), std::io::stdout);
     init_subscriber(subscriber);
 
     // Panic if we can't read configuration
