@@ -1,4 +1,5 @@
 //! src.routes.subscriptions "//!: The double exclamation mark indicates an inner documentation comment"
+use crate::telemetry::init_subscriber;
 use actix_web::{web, HttpResponse};
 use chrono::Utc;
 use sqlx::PgPool;
@@ -15,72 +16,52 @@ pub struct FormData {
 /// Extract form data using serde.
 /// This handler get called only if content type is *x-www-form-urlencoded*
 /// and content of the request could be deserialized to a `FormData` struct
+
+// #[tracing::instrument] creates a span at the beginning of the function invocation and
+// automatically attaches all arguments passed to the function to the context of the span -
+// in our case, form and db_pool. Often function arguments won’t be displayable on log records
+// (e.g.pool) or like to specify more explicitly what should/how
+// they should be captured (e.g. naming each field of form) -
+// we explicitly tell tracing to ignore them using the skip directive.
+#[tracing::instrument(
+    name = "Creating new subscriber",
+    skip(form, db_pool),
+    fields(
+        request_id = %Uuid::new_v4(),
+        subscriber_email = %form.email,
+        subscriber_name = %form.name
+    )
+)]
 pub async fn subscribe(
     form: web::Form<FormData>,
     // Retrieving a connection from the application state!
     db_pool: web::Data<PgPool>,
 ) -> HttpResponse {
-    let request_id = Uuid::new_v4();
-    let event = String::from("creatingNewSubscriber");
+    match insert_subscriber(&db_pool, &form).await {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(_) => HttpResponse::InternalServerError().finish(),
+    }
+}
 
-    // Spans, like logs, have an associated level
-    // `info_span` creates a span at the info-level
-    //
-    // You can enter (and exit) a span multiple times. Closing, instead, is final:
-    // it happens when the span itself is dropped.
-    // This comes pretty handy when you have a unit of work that can be paused and then resumed -
-    // e.g. an asynchronous task!
-    let request_span = tracing::info_span!(
-        "",
-        %request_id,
-        %event,
-        // Notice that we prefixed all of them with a % symbol:
-        // we are telling tracing to use their Display implementation for logging purposes
-        subscriber_name = %form.name,
-        subscriber_email = %form.email
-    );
-
-    let _request_span_guard = request_span.enter();
-
-    // `Result` has two variants: `Ok` and `Err`.
-    // The first for successes, the second for failures.
-
-    // We do not call `.enter` on query_span!
-    // `.instrument` takes care of it at the right moments
-    // in the query future lifetime
-    let query_span = tracing::info_span!(
-        "query=Creating user in DB ",
-        %event,
-    );
-
-    match sqlx::query!(
+#[tracing::instrument(name = "Saving a new subscriber in DB", skip(form, pool))]
+pub async fn insert_subscriber(pool: &PgPool, form: &FormData) -> Result<(), sqlx::Error> {
+    sqlx::query!(
         r#"
-        INSERT INTO subscriptions (id, email, name, subscribed_at)
-        VALUES ($1, $2, $3, $4)
-        "#,
+    INSERT INTO subscriptions (id, email, name, subscribed_at)
+    VALUES ($1, $2, $3, $4)
+            "#,
         Uuid::new_v4(),
         form.email,
         form.name,
         Utc::now()
     )
-    // We use `get_ref` to get an immutable reference to the `PgConnection`
-    // wrapped by `web::Data`.
-    // Using the pool as a drop-in replacement for PgConnection
-    .execute(db_pool.get_ref())
-    .instrument(query_span)
+    .execute(pool)
     .await
-    {
-        Ok(_) => HttpResponse::Ok().finish(),
-        Err(err) => {
-            tracing::error!(
-                "requestId={}, failed to execute query: {:?}",
-                request_id,
-                err
-            );
-            HttpResponse::InternalServerError().finish()
-        }
-    }
-
-    // `_request_span_guard` is dropped at the end of `subscribe`
-    // That's when we "exit" the span
+    .map_err(|err| {
+        tracing::error!("requestId={}, failed to execute query: {:?}", err);
+        err
+        // Using the `?` operator to return early
+        // if the function failed, returning a sqlx::Error
+    })?;
+    Ok(())
 }
