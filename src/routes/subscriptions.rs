@@ -1,9 +1,7 @@
 //! src.routes.subscriptions "//!: The double exclamation mark indicates an inner documentation comment"
-use crate::telemetry::init_subscriber;
 use actix_web::{web, HttpResponse};
 use chrono::Utc;
 use sqlx::PgPool;
-use tracing::Instrument;
 use uuid::Uuid;
 
 // this is a Library create because it doesn't contain a main function
@@ -58,7 +56,7 @@ pub async fn insert_subscriber(pool: &PgPool, form: &FormData) -> Result<(), sql
     .execute(pool)
     .await
     .map_err(|err| {
-        tracing::error!("requestId={}, failed to execute query: {:?}", err);
+        tracing::error!("failed to execute query: {:?}", err);
         err
         // Using the `?` operator to return early
         // if the function failed, returning a sqlx::Error
