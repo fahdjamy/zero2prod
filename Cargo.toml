@@ -18,6 +18,8 @@ uuid = {version = "1.10.0", features = ["v4"]}
 actix-web = "4"
 reqwest = "0.12.5"
 tokio = {version = "1", features = ["macros", "rt-multi-thread"]}
+# Designed as a drop-in replacement of actix-web’s Logger, just based on tracing instead of log
+tracing-actix-web = "0.7.11"# automatically adds a requestId in all calls
 # We need the optional `derive` feature to use `serde`'s procedural macros:
 # `#[derive(Serialize)]` and `#[derive(Deserialize)]`.
 # The feature is not enabled by default to avoid pulling in
