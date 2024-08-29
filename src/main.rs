@@ -18,7 +18,6 @@ async fn main() -> Result<(), std::io::Error> {
 
     let connection_pool =
         PgPool::connect_lazy(&configuration.database.connection_string().expose_secret())
-            .await
             .expect("Failed to connect to the DB");
 
     let address = format!(
