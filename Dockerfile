@@ -1,5 +1,6 @@
 # We use the latest Rust stable release as base image
-FROM rust:1.80.1
+# Build stage
+FROM rust:1.80.1 AS builder
 
 # Switch the working directory to `app` (equivalent to `cd app`)
 # The `app` folder will be created for us by Docker in case it does not
@@ -25,3 +26,20 @@ ENV APP_ENVIRONMENT=production
 
 # When `docker run` is executed, launch the binary!
 ENTRYPOINT ["./target/release/zero2prod"]
+
+
+# RUNTIME stage
+FROM rust:1.80.1-slim AS runtime
+
+WORKDIR /app
+
+# Copy the compiled binary from the builder environment
+# to the runtime environment
+COPY --from=builder /app/target/release/zero2prod zero2prod
+
+# We need the configuration folder at runtime!
+COPY configuration configuration
+
+ENV APP_ENVIRONMENT=production
+
+ENTRYPOINT ["./zero2prod"]
