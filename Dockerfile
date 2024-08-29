@@ -1,17 +1,24 @@
-# We use the latest Rust stable release as base image
-# Build stage
-FROM rust:1.80.1 AS builder
+# // https://github.com/LukeMathWalker/cargo-chef
 
-# Switch the working directory to `app` (equivalent to `cd app`)
-# The `app` folder will be created for us by Docker in case it does not
-# exist already.
+FROM lukemathwalker/cargo-chef:latest-rust-1.80.1 AS chef
 WORKDIR /app
-
-# Install the required system dependencies for our linking configuration
 RUN apt update && apt install lld clang -y
 
-# Copy dependency files first for better caching
-COPY Cargo.toml Cargo.lock ./
+FROM chef AS planner
+COPY . .
+# Compute a lock-like file for our project
+RUN cargo chef prepare  --recipe-path recipe.json
+
+# Use the latest Rust stable release as base image
+# Build stage
+FROM chef AS builder
+
+COPY --from=planner /app/recipe.json recipe.json
+# Build our project dependencies, not our application!
+RUN cargo chef cook --release --recipe-path recipe.json
+# Up to this point, if our dependency tree stays the same,
+# all layers should be cached.
+
 # Copy all files from our working environment to our Docker image
 COPY . .
 
@@ -21,11 +28,13 @@ ENV SQLX_OFFLINE=true
 # Use the release profile to make it faaaast
 RUN cargo build --release
 
-
 # RUNTIME stage
 # use the bare operating system as base image
 FROM debian:bookworm-slim AS runtime
 
+# Switch the working directory to `app` (equivalent to `cd app`)
+# The `app` folder will be created for us by Docker in case it does not
+# exist already.
 WORKDIR /app
 
 # Install OpenSSL - it is dynamically linked by some of our dependencies
@@ -41,9 +50,11 @@ RUN apt-get update -y \
 # Copy the compiled binary from the builder environment
 # to the runtime environment
 COPY --from=builder /app/target/release/zero2prod zero2prod
+
 # We need the configuration folder at runtime!
 COPY configuration configuration
-# When `docker run` is executed, launch the binary!
+
 ENV APP_ENVIRONMENT=production
 
+# When `docker run` is executed, launch the binary!
 ENTRYPOINT ["./zero2prod"]
