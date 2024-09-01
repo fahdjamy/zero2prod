@@ -25,7 +25,11 @@ tracing-actix-web = "0.7.11"# automatically adds a requestId in all calls
 # The feature is not enabled by default to avoid pulling in
 # unnecessary dependencies for projects that do not need it.
 serde = { version = "1.0.204", features = ["derive"] }
-
+# An extension trait to provide the `graphemes` method
+# on `String` and `&str`
+# an extension trait is a programming pattern in rust that allows you to add new methods to an existing type,
+# even if you don't own or control that type's definition
+unicode-segmentation = "1.11.0"
 # environment variables are strings for the config crate,
 # and it will fail to pick up integers if using the standard deserialization routine from serde.
 # used to specify a custom deserialization function
