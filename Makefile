@@ -18,6 +18,22 @@ run-test-debug:
 	# all tests
 	TEST_LOG=true cargo test | bunyan
 
+test_show_output:
+	@echo "Running tests showing output failure or success"
+	cargo test -- --show-output
+
+test_ignored:
+	@echo "Running only ignored tests"
+	cargo test -- --ignored
+
+tests_plus_ignored:
+	@echo "Running all tests plus ignored tests"
+	cargo test -- --include-ignored
+
+test_specific_integration:
+	@echo "Running specific integration file"
+	cargo test --test <integration_file_name>
+
 docker-release-build:
 	# “Using . we are telling Docker to use the current directory as the build context for this image; COPY .
 	# app will therefore copy all files from the current directory (including our source code!)
