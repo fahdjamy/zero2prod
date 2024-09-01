@@ -5,13 +5,13 @@ use sqlx::PgPool;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
-use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
+use crate::domain::NewSubscriber;
 
 // this is a Library create because it doesn't contain a main function
 #[derive(serde::Deserialize)]
 pub struct FormData {
-    email: String,
-    name: String,
+    pub name: String,
+    pub email: String,
 }
 
 /// Extract form data using serde.
@@ -40,21 +40,11 @@ pub async fn subscribe(
     if !is_valid_name(&form.name) {
         return HttpResponse::BadRequest().finish();
     }
-    // `web::Form` is a wrapper around `FormData`
+    // `web::Form` is a wrapper around `FormData` (web::Form is a struct tuple)
     // `form.0` gives us access to the underlying `FormData`
-    let subscriber_name = match SubscriberName::parse(form.0.name) {
+    let new_subscriber = match form.0.try_into() {
         Ok(name) => name,
         Err(_) => return HttpResponse::BadRequest().finish(),
-    };
-
-    let subscriber_email = match SubscriberEmail::parse(form.0.email) {
-        Ok(email) => email,
-        Err(_) => return HttpResponse::BadRequest().finish(),
-    };
-
-    let new_subscriber = NewSubscriber {
-        name: subscriber_name,
-        email: subscriber_email,
     };
     match insert_subscriber(&db_pool, &new_subscriber).await {
         Ok(_) => HttpResponse::Ok().finish(),
