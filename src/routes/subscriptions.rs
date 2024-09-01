@@ -1,5 +1,5 @@
 //! src.routes.subscriptions "//!: The double exclamation mark indicates an inner documentation comment"
-use actix_web::{HttpResponse, web};
+use actix_web::{web, HttpResponse};
 use chrono::Utc;
 use sqlx::PgPool;
 use unicode_segmentation::UnicodeSegmentation;
