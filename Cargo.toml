@@ -13,11 +13,11 @@ name = "zero2prod"
 
 [dependencies]
 config = "0.14.0"
-chrono = {version = "0.4.38", default-features = false, features = ["clock"]}
-uuid = {version = "1.10.0", features = ["v4"]}
+chrono = { version = "0.4.38", default-features = false, features = ["clock"] }
+uuid = { version = "1.10.0", features = ["v4"] }
 actix-web = "4"
 reqwest = "0.12.5"
-tokio = {version = "1", features = ["macros", "rt-multi-thread"]}
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 # Designed as a drop-in replacement of actix-web’s Logger, just based on tracing instead of log
 tracing-actix-web = "0.7.11"# automatically adds a requestId in all calls
 # We need the optional `derive` feature to use `serde`'s procedural macros:
@@ -25,6 +25,11 @@ tracing-actix-web = "0.7.11"# automatically adds a requestId in all calls
 # The feature is not enabled by default to avoid pulling in
 # unnecessary dependencies for projects that do not need it.
 serde = { version = "1.0.204", features = ["derive"] }
+
+# environment variables are strings for the config crate,
+# and it will fail to pick up integers if using the standard deserialization routine from serde.
+# used to specify a custom deserialization function
+serde-aux = "4.5.0"
 
 # if you have a method that should only be called once, use this to inforce that
 once_cell = "1.19.0"
@@ -34,7 +39,7 @@ secrecy = { version = "0.8.0", features = ["serde"] }
 
 # replace log with tracing for richer log messages
 tracing = { version = "0.1.40", features = ["log"] }
-tracing-subscriber = {version = "0.3.18", features = ["registry", "env-filter"]}
+tracing-subscriber = { version = "0.3.18", features = ["registry", "env-filter"] }
 tracing-bunyan-formatter = "0.3.9"
 # tracing does not emit tracing events out of the box and does not provide a feature flag to enable this behaviour.
 # If we want it, we need to explicitly register a logger implementation to

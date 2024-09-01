@@ -37,3 +37,6 @@ prepare-sqlx:
 	# altogether and perform an offline build.
 	# this will force sqlx to look at the saved metadata instead of querying a live DB
 	cargo sqlx prepare --workspace
+
+update-digital-ocean:
+	doctl apps update YOUR-APP-ID --spec=spec.yaml

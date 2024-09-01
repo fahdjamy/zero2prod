@@ -1,9 +1,12 @@
 //! src/configuration.rs
 
 use secrecy::{ExposeSecret, Secret};
+use serde_aux::field_attributes::deserialize_number_from_string;
+use sqlx::postgres::PgConnectOptions;
 
 #[derive(serde::Deserialize)]
 pub struct DatabaseSettings {
+    #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
     pub host: String,
     pub username: String,
@@ -12,7 +15,7 @@ pub struct DatabaseSettings {
 }
 
 impl DatabaseSettings {
-    pub fn connection_string(&self) -> Secret<String> {
+    pub fn connection_with_db(&self) -> Secret<String> {
         Secret::new(format!(
             "postgres://{}:{}@{}:{}/{}",
             self.username,
@@ -24,19 +27,18 @@ impl DatabaseSettings {
     }
 
     // helps us connect to the database instance rather than a specific db
-    pub fn connection_string_without_db(&self) -> Secret<String> {
-        Secret::new(format!(
-            "postgres://{}:{}@{}:{}",
-            self.username,
-            self.password.expose_secret(),
-            self.host,
-            self.port
-        ))
+    pub fn without_db(&self) -> PgConnectOptions {
+        PgConnectOptions::new()
+            .port(self.port)
+            .host(&self.host)
+            .username(&self.username)
+            .password(&self.password.expose_secret())
     }
 }
 
 #[derive(serde::Deserialize)]
 pub struct ApplicationSettings {
+    #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
     pub host: String,
 }
@@ -68,6 +70,14 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
         .add_source(config::File::from(
             configuration_dir.join(environment_filename),
         ))
+        // Add in settings from environment variables (with a prefix of APP and
+        // '__' as separator)
+        // E.g. `APP_APPLICATION__PORT=8001 would set `Settings.application.port`
+        .add_source(
+            config::Environment::with_prefix("APP")
+                .prefix_separator("_")
+                .separator("__"),
+        )
         .build()?;
 
     // Try to convert the configuration values it read into
