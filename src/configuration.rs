@@ -2,7 +2,8 @@
 
 use secrecy::{ExposeSecret, Secret};
 use serde_aux::field_attributes::deserialize_number_from_string;
-use sqlx::postgres::PgConnectOptions;
+use sqlx::postgres::{PgConnectOptions, PgSslMode};
+use sqlx::ConnectOptions;
 
 #[derive(serde::Deserialize)]
 pub struct DatabaseSettings {
@@ -10,27 +11,39 @@ pub struct DatabaseSettings {
     pub port: u16,
     pub host: String,
     pub username: String,
+    // determines of db connection needs to be secure or not
+    pub require_ssl: bool,
     pub database_name: String,
     pub password: Secret<String>,
 }
 
 impl DatabaseSettings {
-    pub fn connection_with_db(&self) -> Secret<String> {
-        Secret::new(format!(
-            "postgres://{}:{}@{}:{}/{}",
-            self.username,
-            self.password.expose_secret(),
-            self.host,
-            self.port,
-            self.database_name
-        ))
+    pub fn connection_with_db(&self) -> PgConnectOptions {
+        let options = self
+            .without_db()
+            .database(&self.database_name)
+            // lower logs from INFO to TRACE.
+            .log_statements(tracing_log::log::LevelFilter::Trace);
+
+        options
     }
 
     // helps us connect to the database instance rather than a specific db
     pub fn without_db(&self) -> PgConnectOptions {
+        // deciding whether to strictly require an encrypted connection or
+        // allow falling back to an unencrypted one if necessary.
+        let ssl_mode = if self.require_ssl {
+            PgSslMode::Require
+        } else {
+            // Try an encrypted connection, fallback to unencrypted if it fails
+            // First try an SSL connection; if that fails, try a non-SSL connection.
+            // This is the default if no other mode is specified
+            PgSslMode::Prefer
+        };
         PgConnectOptions::new()
             .port(self.port)
             .host(&self.host)
+            .ssl_mode(ssl_mode)
             .username(&self.username)
             .password(&self.password.expose_secret())
     }

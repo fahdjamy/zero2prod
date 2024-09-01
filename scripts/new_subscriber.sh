@@ -5,3 +5,8 @@ curl -i -X POST -d 'email=thomasmann@hotmail.com&name=Tom' \
 
 # to make this file executable, run cmd below in your terminal
 # chmod +x scripts/new_subscriber.sh
+
+curl --request POST \
+    --data 'name=le%20faa&email=faa%40gmail.com' \
+    <digital-ocean-application-url>/subscriptions \
+    --verbose
