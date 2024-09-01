@@ -22,12 +22,12 @@ async fn main() -> Result<(), std::io::Error> {
         "{}:{}",
         configuration.application.host, configuration.application.port
     );
-    let listener = TcpListener::bind(address).expect(
-        format!(
+
+    let listener = TcpListener::bind(address).unwrap_or_else(|_| {
+        panic!(
             "failed to bind on port {:?}",
             configuration.application.port
         )
-        .as_str(),
-    );
+    });
     run(listener, connection_pool)?.await
 }

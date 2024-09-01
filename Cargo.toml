@@ -32,6 +32,16 @@ serde = { version = "1.0.204", features = ["derive"] }
 unicode-segmentation = "1.11.0"
 # claims crate is used to get more informative error messages:
 claims = "0.7.1"
+# fake provides generation logic for both primitive data types (integers, floats, strings) and
+# higher-level objects (IP addresses, country codes, etc.) - in particular, emails!
+fake = "2.9.2"
+# for property based testing
+quickcheck = "1.0.3"
+quickcheck_macros = "1.0.0"
+# Rand provides utilities to generate random numbers, to convert them to useful types and distributions,
+# and some randomness-related algorithms
+rand = { version = "0.8", features = ["std_rng"] }
+
 validator = { version = "0.18.1", features = ["derive"] }
 # environment variables are strings for the config crate,
 # and it will fail to pick up integers if using the standard deserialization routine from serde.
