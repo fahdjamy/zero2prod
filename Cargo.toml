@@ -30,6 +30,9 @@ serde = { version = "1.0.204", features = ["derive"] }
 # an extension trait is a programming pattern in rust that allows you to add new methods to an existing type,
 # even if you don't own or control that type's definition
 unicode-segmentation = "1.11.0"
+# claims crate is used to get more informative error messages:
+claims = "0.7.1"
+validator = { version = "0.18.1", features = ["derive"] }
 # environment variables are strings for the config crate,
 # and it will fail to pick up integers if using the standard deserialization routine from serde.
 # used to specify a custom deserialization function
