@@ -16,7 +16,6 @@ config = "0.14.0"
 chrono = { version = "0.4.38", default-features = false, features = ["clock"] }
 uuid = { version = "1.10.0", features = ["v4"] }
 actix-web = "4"
-reqwest = "0.12.5"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 # Designed as a drop-in replacement of actix-web’s Logger, just based on tracing instead of log
 tracing-actix-web = "0.7.11"# automatically adds a requestId in all calls
@@ -30,14 +29,6 @@ serde = { version = "1.0.204", features = ["derive"] }
 # an extension trait is a programming pattern in rust that allows you to add new methods to an existing type,
 # even if you don't own or control that type's definition
 unicode-segmentation = "1.11.0"
-# claims crate is used to get more informative error messages:
-claims = "0.7.1"
-# fake provides generation logic for both primitive data types (integers, floats, strings) and
-# higher-level objects (IP addresses, country codes, etc.) - in particular, emails!
-fake = "2.9.2"
-# for property based testing
-quickcheck = "1.0.3"
-quickcheck_macros = "1.0.0"
 # Rand provides utilities to generate random numbers, to convert them to useful types and distributions,
 # and some randomness-related algorithms
 rand = { version = "0.8", features = ["std_rng"] }
@@ -75,3 +66,22 @@ features = [
     "chrono", # “adds support for mapping SQL timestamptz to the DateTime<T> type from the chrono crate”
     "migrate" # “gives us access to the same functions used under the hood by sqlx-cli to manage migrations”
 ]
+
+[dependencies.reqwest]
+version = "0.12.7"
+default-features = false
+# We need the `json` feature flag to serialize/deserialize JSON payloads
+features = ["json", "rustls-tls"]
+
+[dev-dependencies]
+wiremock = "0.6.2"
+# fake provides generation logic for both primitive data types (integers, floats, strings) and
+# higher-level objects (IP addresses, country codes, etc.) - in particular, emails!
+fake = "2.9.2"
+# for property based testing
+quickcheck = "1.0.3"
+quickcheck_macros = "1.0.0"
+serde_json = "1.0.61"
+serde_urlencoded = "0.7.1"
+# claims crate is used to get more informative error messages:
+claims = "0.7.1"
