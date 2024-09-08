@@ -24,8 +24,8 @@ async fn main() -> Result<(), std::io::Error> {
         .sender()
         .expect("Invalid sender email configured");
 
+    let time_out = configuration.email_client.timeout();
     let base_url = configuration.email_client.base_url;
-    let time_out = std::time::Duration::from_millis(200);
     let auth_token = configuration.email_client.authorization_token;
     let email_client = EmailClient::new(base_url, sender_mail, auth_token, time_out);
 

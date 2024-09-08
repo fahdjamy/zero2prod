@@ -10,6 +10,7 @@ database:
 
 email_client:
   base_url: localhost
+  timeout_milliseconds: 10000
   sender_email: test@gmail.com
   # We are only setting the development value,
   # we'll deal with the production token outside of version control

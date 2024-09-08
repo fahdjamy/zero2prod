@@ -1,10 +1,14 @@
 use std::net::TcpListener;
 
+use fake::faker::internet::en::SafeEmail;
+use fake::{Fake, Faker};
 use once_cell::sync::Lazy;
+use secrecy::Secret;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 
 use zero2prod::configuration::{get_configuration, DatabaseSettings};
+use zero2prod::domain::SubscriberEmail;
 use zero2prod::email_client::EmailClient;
 use zero2prod::startup::run;
 use zero2prod::telemetry::{get_subscriber, init_subscriber};
@@ -32,6 +36,16 @@ pub struct TestApp {
     pub db_pool: PgPool,
 }
 
+/// Generate a random subscriber email
+fn fake_email() -> SubscriberEmail {
+    SubscriberEmail::parse(SafeEmail().fake()).unwrap()
+}
+
+pub fn email_client(base_url: String) -> EmailClient {
+    let time_out = std::time::Duration::from_millis(200);
+    EmailClient::new(base_url, fake_email(), Secret::new(Faker.fake()), time_out)
+}
+
 // the function is changed to being asynchronous
 async fn spawn_app() -> TestApp {
     // The first time `initialize` is invoked the code in `TRACING` is executed.
@@ -54,15 +68,7 @@ async fn spawn_app() -> TestApp {
     let conn_pool = configure_database(&configuration.database).await;
 
     // Build a new email client
-    let sender_email = configuration
-        .email_client
-        .sender()
-        .expect("Invalid sender email address.");
-    let email_client = EmailClient::email_client(
-        configuration.email_client.base_url,
-        sender_email,
-        configuration.email_client.authorization_token,
-    );
+    let email_client = email_client(configuration.email_client.base_url);
 
     let server = run(listener, conn_pool.clone(), email_client).expect("failed to bind address");
 
