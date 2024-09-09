@@ -1,14 +1,9 @@
-use fake::faker::internet::en::SafeEmail;
-use fake::{Fake, Faker};
 use once_cell::sync::Lazy;
-use secrecy::Secret;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
-use std::net::TcpListener;
 use uuid::Uuid;
+
 use zero2prod::configuration::{get_configuration, DatabaseSettings};
-use zero2prod::domain::SubscriberEmail;
-use zero2prod::email_client::EmailClient;
-use zero2prod::startup::run;
+use zero2prod::startup::{get_connection_pool, Application};
 use zero2prod::telemetry::{get_subscriber, init_subscriber};
 
 // Ensure that the `tracing` stack is only initialised once using `once_cell`
@@ -34,48 +29,38 @@ pub struct TestApp {
     pub db_pool: PgPool,
 }
 
-/// Generate a random subscriber email
-fn fake_email() -> SubscriberEmail {
-    SubscriberEmail::parse(SafeEmail().fake()).unwrap()
-}
-
-pub fn email_client(base_url: String) -> EmailClient {
-    let time_out = std::time::Duration::from_millis(200);
-    EmailClient::new(base_url, fake_email(), Secret::new(Faker.fake()), time_out)
-}
-
 // the function is changed to being asynchronous
 pub async fn spawn_app() -> TestApp {
     // The first time `initialize` is invoked the code in `TRACING` is executed.
     // All other invocations will instead skip execution.
     Lazy::force(&TRACING);
 
-    // “Port 0 is special-cased at the OS level:
-    //  trying to bind port 0 will trigger an OS scan for an
-    //  available port which will then be bound to the application”
-    let localhost = "127.0.0.1:0";
+    let configuration = {
+        // Randomise configuration to ensure test isolation
+        let mut config = get_configuration().expect("failed to read configuration");
+        // create a different Database on every call to this function
+        config.database.database_name = Uuid::new_v4().to_string();
+        // Use a random OS port.
+        // Port 0 is special-cased at the OS level: trying to bind port 0 will trigger an OS scan
+        // for an available port which will then be bound to the application
+        config.application.port = 0;
+        config
+    };
 
-    let listener = TcpListener::bind(localhost).expect("Failed to bind random port");
-    let port = listener.local_addr().unwrap().port();
-    let address = format!("http://127.0.0.1:{}", port);
+    configure_database(&configuration.database).await;
 
-    let mut configuration = get_configuration().expect("failed to read configuration");
-    // create a new Database on every call to this function
-    configuration.database.database_name = Uuid::new_v4().to_string();
-
-    let conn_pool = configure_database(&configuration.database).await;
-
-    // Build a new email client
-    let email_client = email_client(configuration.email_client.base_url);
-
-    let server = run(listener, conn_pool.clone(), email_client).expect("failed to bind address");
-
-    let _ = tokio::spawn(server);
+    // Launch the application as a background task.
+    // Notice the .clone!
+    let application = Application::build(configuration.clone())
+        .await
+        .expect("failed to build application");
+    let address = format!("http://127.0.0.1:{}", application.port());
+    let _ = tokio::spawn(application.run_until_stopped());
 
     // return app address to the caller
     TestApp {
         address,
-        db_pool: conn_pool,
+        db_pool: get_connection_pool(&configuration.database),
     }
 }
 
