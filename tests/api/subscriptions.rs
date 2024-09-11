@@ -5,11 +5,10 @@ use crate::helpers::spawn_app;
 async fn subscribe_returns_200_for_valid_data() {
     // Arrange
     let app = spawn_app().await;
-    let client = reqwest::Client::new();
 
     // Action
     let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
-    let response = app.post_subscriptions(body.into());
+    let response = app.post_subscriptions(body.into()).await;
 
     // Assert
     assert_eq!(200, response.status().as_u16());
@@ -39,7 +38,7 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
         // why use the into() method
         // because. post_subscriptions expects a String, so we use into() to convert a string slice
         // (&str) into a String
-        let response = app.post_subscriptions(invalid_body.into());
+        let response = app.post_subscriptions(invalid_body.into()).await;
 
         // Assert
         assert_eq!(
@@ -64,7 +63,7 @@ async fn subscribe_returns_a_400_when_data_present_but_invalid() {
 
     for (invalid_body, err_msg) in test_cases {
         // Action
-        let response = app.post_subscriptions(invalid_body.into());
+        let response = app.post_subscriptions(invalid_body.into()).await;
 
         // Assert
         assert_eq!(

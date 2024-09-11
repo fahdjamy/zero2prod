@@ -15,7 +15,7 @@ use crate::routes::subscribe;
 /// Read-more about the endpoints
 ///     POST /subscriptions will:
 ///
-///     Add the subscriber details to the database in the subscriptions table, with status equal to pending_confirmation;
+///    Add the subscriber details to the database in the subscriptions table, with status equal to pending_confirmation;
 ///     generate a (unique) subscription_token;
 ///     store subscription_token in our database against the subscriber id in a subscription_tokens table;
 ///     Email the new subscriber a link structured as https://<api-domain>/subscriptions/confirm?token=<subscription_token>;
@@ -25,7 +25,7 @@ use crate::routes::subscribe;
 /// Once they click on the link, a browser tab will open up and a GET request will be fired to our
 /// GET /subscriptions/confirm endpoint. The request handler will:
 ///
-///     retrieve subscription_token from the query parameters;
+///    retrieve subscription_token from the query parameters;
 ///     retrieve the subscriber id associated with subscription_token from the subscription_tokens table;
 ///     update the subscriber status from pending_confirmation to active in the subscriptions table;
 ///     return a 200 OK.
@@ -112,5 +112,5 @@ pub fn run(
 }
 
 pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
-    PgPoolOptions::new().connect_lazy_with(configuration.without_db())
+    PgPoolOptions::new().connect_lazy_with(configuration.connection_with_db())
 }
