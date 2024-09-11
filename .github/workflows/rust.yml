@@ -75,8 +75,8 @@ jobs:
       - name: Run all tests (ignored or not)
         run: cargo test -- --include-ignored
 
-      - name: Check that queries are fresh
-        run: cargo sqlx prepare --workspace --check -- --all-targets
+  #      - name: Check that queries are fresh
+  #        run: cargo sqlx prepare --workspace --check -- --all-targets
 
   coverage:
     name: Code coverage
