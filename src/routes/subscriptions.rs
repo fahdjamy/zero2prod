@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::domain::NewSubscriber;
 use crate::email_client::EmailClient;
+use crate::startup::ApplicationBaseUrl;
 
 // this is a Library create because it doesn't contain a main function
 #[derive(serde::Deserialize)]
@@ -27,7 +28,7 @@ pub struct FormData {
 // we explicitly tell tracing to ignore them using the skip directive.
 #[tracing::instrument(
     name = "Creating new subscriber",
-    skip(form, db_pool, email_client),
+    skip(form, db_pool, email_client, base_url),
     fields(
         subscriber_email = %form.email,
         subscriber_name = %form.name
@@ -38,6 +39,7 @@ pub async fn subscribe(
     // Retrieving a connection from the application state!
     db_pool: web::Data<PgPool>,
     email_client: web::Data<EmailClient>,
+    base_url: web::Data<ApplicationBaseUrl>,
 ) -> HttpResponse {
     if !is_valid_name(&form.name) {
         return HttpResponse::BadRequest().finish();
@@ -54,19 +56,26 @@ pub async fn subscribe(
     };
 
     // Email the new subscriber.
-    let result = send_confirmation(&email_client, new_subscriber).await;
+    let result = send_confirmation(&base_url.0, &email_client, new_subscriber).await;
     if result.is_err() {
         return HttpResponse::InternalServerError().finish();
     }
     HttpResponse::Ok().finish()
 }
 
-#[tracing::instrument(name = "Creating new subscriber", skip(email_client, new_subscriber))]
+#[tracing::instrument(
+    name = "Creating new subscriber",
+    skip(email_client, new_subscriber, base_url)
+)]
 async fn send_confirmation(
+    base_url: &str,
     email_client: &EmailClient,
     new_subscriber: NewSubscriber,
 ) -> Result<(), reqwest::Error> {
-    let confirmation_link = "https://there-is-no-such-domain.com/subscriptions/confirm";
+    let confirmation_link = format!(
+        "{}/subscriptions/confirm?subscription_token=myToken",
+        base_url
+    );
 
     // Send a confirmation email to the new subscriber.
     let subject = "Welcome!";

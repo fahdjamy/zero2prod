@@ -9,8 +9,8 @@ use tracing_actix_web::TracingLogger;
 
 use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
-use crate::routes::check_health;
 use crate::routes::subscribe;
+use crate::routes::{check_health, confirm};
 
 /// Read-more about the endpoints
 ///     POST /subscriptions will:
@@ -60,7 +60,12 @@ impl Application {
         let listener = TcpListener::bind(address)?;
 
         let port = listener.local_addr().unwrap().port();
-        let server = run(listener, connection_pool, email_client)?;
+        let server = run(
+            listener,
+            connection_pool,
+            email_client,
+            configuration.application.base_url,
+        )?;
 
         // We "save" the bound port in one of `Application`'s fields
         Ok(Self { port, server })
@@ -82,10 +87,17 @@ async fn greet(req: HttpRequest) -> impl Responder {
     format!("Hi, {}", name)
 }
 
+// A wrapper type in order to retrieve the URL
+// in the `subscribe` handler.
+// Retrieval from the context, in actix-web, is type-based: using
+// a raw `String` would expose us to conflicts.
+pub struct ApplicationBaseUrl(pub String);
+
 pub fn run(
     listener: TcpListener,
     connection_pool: PgPool,
     email_client: EmailClient,
+    base_url: String,
 ) -> Result<Server, std::io::Error> {
     // Wrap the connection in a smart pointer (an ARC) https://doc.rust-lang.org/std/sync/struct.Arc.html
     // Wrap the pool using web::Data, which boils down to an Arc smart pointer
@@ -93,6 +105,7 @@ pub fn run(
     // wrap EmailClient in actix_web::web::Data (an Arc pointer) and pass a pointer to
     // app_data every time we need to build an App - like we are doing with PgPool
     let email_client = Data::new(email_client);
+    let base_url = Data::new(ApplicationBaseUrl(base_url));
 
     // Capture `connection` from the surrounding environment
     let server = HttpServer::new(move || {
@@ -102,8 +115,10 @@ pub fn run(
             .wrap(TracingLogger::default())
             .route("/health_check", web::get().to(check_health))
             .route("/subscriptions", web::post().to(subscribe))
+            .route("/subscriptions/confirm", web::get().to(confirm))
             .route("/{name}", web::get().to(greet))
             .app_data(db_pool.clone())
+            .app_data(base_url.clone())
             .app_data(email_client.clone())
     })
     .listen(listener)?
