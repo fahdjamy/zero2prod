@@ -31,6 +31,8 @@ serde = { version = "1.0.204", features = ["derive"] }
 unicode-segmentation = "1.11.0"
 # Rand provides utilities to generate random numbers, to convert them to useful types and distributions,
 # and some randomness-related algorithms
+# We need the `std_rng` to get access to the PRNG we want
+# we'll use crate for https://en.wikipedia.org/wiki/Cryptographically_secure_pseudorandom_number_generator
 rand = { version = "0.8", features = ["std_rng"] }
 
 validator = { version = "0.18.1", features = ["derive"] }

@@ -1,6 +1,8 @@
 //! src.routes.subscriptions "//!: The double exclamation mark indicates an inner documentation comment"
 use actix_web::{web, HttpResponse};
 use chrono::Utc;
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
 use sqlx::PgPool;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
@@ -51,12 +53,27 @@ pub async fn subscribe(
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
 
-    if insert_subscriber(&db_pool, &new_subscriber).await.is_err() {
-        return HttpResponse::InternalServerError().finish();
+    let subscriber_id = match insert_subscriber(&db_pool, &new_subscriber).await {
+        Ok(subscriber_id) => subscriber_id,
+        Err(_) => return HttpResponse::InternalServerError().finish(),
     };
+    let confirmation_token = generate_subscription_token();
+
+    if store_user_subscription_token(&db_pool, subscriber_id, &confirmation_token)
+        .await
+        .is_err()
+    {
+        return HttpResponse::InternalServerError().finish();
+    }
 
     // Email the new subscriber.
-    let result = send_confirmation(&base_url.0, &email_client, new_subscriber).await;
+    let result = send_confirmation(
+        &base_url.0,
+        &email_client,
+        new_subscriber,
+        &confirmation_token,
+    )
+    .await;
     if result.is_err() {
         return HttpResponse::InternalServerError().finish();
     }
@@ -71,10 +88,11 @@ async fn send_confirmation(
     base_url: &str,
     email_client: &EmailClient,
     new_subscriber: NewSubscriber,
+    confirmation_token: &str,
 ) -> Result<(), reqwest::Error> {
     let confirmation_link = format!(
-        "{}/subscriptions/confirm?subscription_token=myToken",
-        base_url
+        "{}/subscriptions/confirm?subscription_token={}",
+        base_url, confirmation_token
     );
 
     // Send a confirmation email to the new subscriber.
@@ -93,17 +111,39 @@ async fn send_confirmation(
         .await
 }
 
+#[tracing::instrument(name = "Creating new subscriber", skip(db_pool, subscriber_id))]
+async fn store_user_subscription_token(
+    db_pool: &PgPool,
+    subscriber_id: Uuid,
+    subscription_token: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"INSERT INTO subscription_tokens (subscription_token, subscriber_id)
+        VALUES ($1, $2)"#,
+        subscription_token,
+        subscriber_id
+    )
+    .execute(db_pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to execute query: {:?}", e);
+        e
+    })?;
+    Ok(())
+}
+
 #[tracing::instrument(name = "Saving a new subscriber in DB", skip(new_subscriber, pool))]
 pub async fn insert_subscriber(
     pool: &PgPool,
     new_subscriber: &NewSubscriber,
-) -> Result<(), sqlx::Error> {
+) -> Result<Uuid, sqlx::Error> {
+    let subscriber_id = Uuid::new_v4();
     sqlx::query!(
         r#"
     INSERT INTO subscriptions (id, email, name, subscribed_at, status)
     VALUES ($1, $2, $3, $4, 'pending')
             "#,
-        Uuid::new_v4(),
+        subscriber_id,
         new_subscriber.email.as_ref(),
         new_subscriber.name.as_ref(),
         Utc::now(),
@@ -116,7 +156,18 @@ pub async fn insert_subscriber(
         // Using the `?` operator to return early
         // if the function failed, returning a sqlx::Error
     })?;
-    Ok(())
+    Ok(subscriber_id)
+}
+
+/// Generate a random 25-characters-long case-sensitive subscription token.
+fn generate_subscription_token() -> String {
+    // Retrieve the lazily-initialized thread-local random number generator, seeded by the system.
+    let mut rng = thread_rng();
+    std::iter::repeat_with(|| rng.sample(Alphanumeric))
+        .map(char::from)
+        // Using 25 characters we get roughly ~10^45 possible tokens
+        .take(25)
+        .collect()
 }
 
 /// Returns `true` if the input satisfies all our validation constraints
