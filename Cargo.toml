@@ -74,6 +74,7 @@ default-features = false
 features = ["json", "rustls-tls"]
 
 [dev-dependencies]
+linkify = "0.10.0"
 wiremock = "0.6.2"
 # fake provides generation logic for both primitive data types (integers, floats, strings) and
 # higher-level objects (IP addresses, country codes, etc.) - in particular, emails!
