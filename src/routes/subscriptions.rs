@@ -7,7 +7,7 @@ use sqlx::{Error, Executor, PgPool, Postgres, Transaction};
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
-use crate::domain::NewSubscriber;
+use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
 use crate::email_client::EmailClient;
 use crate::startup::ApplicationBaseUrl;
 
@@ -16,6 +16,16 @@ use crate::startup::ApplicationBaseUrl;
 pub struct FormData {
     pub name: String,
     pub email: String,
+}
+
+impl TryFrom<FormData> for NewSubscriber {
+    type Error = String;
+
+    fn try_from(value: FormData) -> Result<Self, Self::Error> {
+        let name = SubscriberName::parse(value.name)?;
+        let email = SubscriberEmail::parse(value.email)?;
+        Ok(Self { email, name })
+    }
 }
 
 /// Extract form data using serde.
