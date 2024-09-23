@@ -31,18 +31,12 @@ use crate::startup::ApplicationBaseUrl;
 
 #[derive(thiserror::Error)]
 pub enum SubscribeError {
-    #[error("Failed to acquire database connection pool")]
-    PoolError(#[source] sqlx::Error),
     #[error("{0}")]
     ValidationError(String),
-    #[error("Failed to acquire database connection pool")]
-    SendEmailError(#[from] reqwest::Error),
-    #[error("Failed to send confirmation error")]
-    StoreTokenError(#[from] StoreTokenError),
-    #[error("Failed to save the new subscriber in db")]
-    InsertSubscriberError(#[source] sqlx::Error),
-    #[error("Failed to commit all changes and save new subscriber information plus token")]
-    TransactionCommitError(#[source] sqlx::Error),
+    // Transparent delegates both `Display`'s and `source`'s implementation
+    // to the type wrapped by `UnexpectedError`.
+    #[error(transparent)]
+    UnexpectedError(#[from] Box<dyn std::error::Error>),
 }
 
 impl From<String> for SubscribeError {
@@ -61,11 +55,7 @@ impl ResponseError for SubscribeError {
     fn status_code(&self) -> StatusCode {
         match self {
             SubscribeError::ValidationError(_) => StatusCode::BAD_REQUEST,
-            SubscribeError::PoolError(_)
-            | SubscribeError::SendEmailError(_)
-            | SubscribeError::InsertSubscriberError(_)
-            | SubscribeError::TransactionCommitError(_)
-            | SubscribeError::StoreTokenError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            SubscribeError::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -143,11 +133,14 @@ pub async fn subscribe(
     // `form.0` gives us access to the underlying `FormData`
     let new_subscriber = form.0.try_into()?;
 
-    let mut transaction = db_pool.begin().await.map_err(SubscribeError::PoolError)?;
+    let mut transaction = db_pool
+        .begin()
+        .await
+        .map_err(|e| SubscribeError::UnexpectedError(Box::new(e)))?;
 
     let subscriber_id = insert_subscriber(&mut transaction, &new_subscriber)
         .await
-        .map_err(SubscribeError::InsertSubscriberError)?;
+        .map_err(|e| SubscribeError::UnexpectedError(Box::new(e)))?;
 
     // generate a confirmation token to be used to make user from pending to confirmed
     let subscription_token = generate_subscription_token();
@@ -155,12 +148,14 @@ pub async fn subscribe(
     // store the user's generated subscription token
     // The `?` operator transparently invokes the `Into` trait
     // on our behalf - we don't need an explicit `map_err` anymore.
-    store_user_subscription_token(&mut transaction, subscriber_id, &subscription_token).await?;
+    store_user_subscription_token(&mut transaction, subscriber_id, &subscription_token)
+        .await
+        .map_err(|e| SubscribeError::UnexpectedError(Box::new(e)))?;
 
     transaction
         .commit()
         .await
-        .map_err(SubscribeError::TransactionCommitError)?;
+        .map_err(|e| SubscribeError::UnexpectedError(Box::new(e)))?;
 
     // Email the new subscriber.
     send_confirmation(
@@ -169,7 +164,8 @@ pub async fn subscribe(
         new_subscriber,
         &subscription_token,
     )
-    .await?;
+    .await
+    .map_err(|e| SubscribeError::UnexpectedError(Box::new(e)))?;
     Ok(HttpResponse::Ok().finish())
 }
 
