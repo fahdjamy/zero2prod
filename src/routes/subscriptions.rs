@@ -1,21 +1,74 @@
 //! src.routes.subscriptions "//!: The double exclamation mark indicates an inner documentation comment"
 
+use actix_web::http::StatusCode;
 use actix_web::{web, HttpResponse, ResponseError};
 use chrono::Utc;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
-use sqlx::{Error, Executor, PgPool, Postgres, Transaction};
-use unicode_segmentation::UnicodeSegmentation;
+use sqlx;
+use sqlx::{Executor, PgPool, Postgres, Transaction};
+use std::fmt::Formatter;
 use uuid::Uuid;
 
 use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
 use crate::email_client::EmailClient;
 use crate::startup::ApplicationBaseUrl;
 
-pub struct StoreTokenError(Error);
+#[derive(Debug)]
+pub enum SubscribeError {
+    ValidationError(String),
+    DatabaseError(sqlx::Error),
+    SendEmailError(reqwest::Error),
+    StoreTokenError(StoreTokenError),
+}
+
+impl From<reqwest::Error> for SubscribeError {
+    fn from(e: reqwest::Error) -> Self {
+        Self::SendEmailError(e)
+    }
+}
+
+impl From<sqlx::Error> for SubscribeError {
+    fn from(e: sqlx::Error) -> Self {
+        Self::DatabaseError(e)
+    }
+}
+
+impl From<StoreTokenError> for SubscribeError {
+    fn from(e: StoreTokenError) -> Self {
+        Self::StoreTokenError(e)
+    }
+}
+
+impl From<String> for SubscribeError {
+    fn from(e: String) -> Self {
+        Self::ValidationError(e)
+    }
+}
+
+impl std::fmt::Display for SubscribeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "failed to create a new subscriber")
+    }
+}
+
+impl std::error::Error for SubscribeError {}
+
+impl ResponseError for SubscribeError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            SubscribeError::ValidationError(_) => StatusCode::BAD_REQUEST,
+            SubscribeError::DatabaseError(_)
+            | SubscribeError::SendEmailError(_)
+            | SubscribeError::StoreTokenError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+pub struct StoreTokenError(sqlx::Error);
 
 impl std::fmt::Display for StoreTokenError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "Database error encountered while storing a subscription token"
@@ -24,7 +77,7 @@ impl std::fmt::Display for StoreTokenError {
 }
 
 impl std::fmt::Debug for StoreTokenError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         error_chain_fmt(self, f)
     }
 }
@@ -38,8 +91,6 @@ impl std::error::Error for StoreTokenError {
         Some(&self.0)
     }
 }
-
-impl ResponseError for StoreTokenError {}
 
 // this is a Library create because it doesn't contain a main function
 #[derive(serde::Deserialize)]
@@ -82,26 +133,14 @@ pub async fn subscribe(
     db_pool: web::Data<PgPool>,
     email_client: web::Data<EmailClient>,
     base_url: web::Data<ApplicationBaseUrl>,
-) -> Result<HttpResponse, actix_web::Error> {
-    if !is_valid_name(&form.name) {
-        return Ok(HttpResponse::BadRequest().finish());
-    }
+) -> Result<HttpResponse, SubscribeError> {
     // `web::Form` is a wrapper around `FormData` (web::Form is a struct tuple)
     // `form.0` gives us access to the underlying `FormData`
-    let new_subscriber = match form.0.try_into() {
-        Ok(name) => name,
-        Err(_) => return Ok(HttpResponse::BadRequest().finish()),
-    };
+    let new_subscriber = form.0.try_into()?;
 
-    let mut transaction = match db_pool.begin().await {
-        Ok(transaction) => transaction,
-        Err(_) => return Ok(HttpResponse::InternalServerError().finish()),
-    };
+    let mut transaction = db_pool.begin().await?;
 
-    let subscriber_id = match insert_subscriber(&mut transaction, &new_subscriber).await {
-        Ok(subscriber_id) => subscriber_id,
-        Err(_) => return Ok(HttpResponse::InternalServerError().finish()),
-    };
+    let subscriber_id = insert_subscriber(&mut transaction, &new_subscriber).await?;
 
     // generate a confirmation token to be used to make user from pending to confirmed
     let subscription_token = generate_subscription_token();
@@ -111,21 +150,16 @@ pub async fn subscribe(
     // on our behalf - we don't need an explicit `map_err` anymore.
     store_user_subscription_token(&mut transaction, subscriber_id, &subscription_token).await?;
 
-    if transaction.commit().await.is_err() {
-        return Ok(HttpResponse::InternalServerError().finish());
-    }
+    transaction.commit().await?;
 
     // Email the new subscriber.
-    let result = send_confirmation(
+    send_confirmation(
         &base_url.0,
         &email_client,
         new_subscriber,
         &subscription_token,
     )
-    .await;
-    if result.is_err() {
-        return Ok(HttpResponse::InternalServerError().finish());
-    }
+    .await?;
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -188,7 +222,7 @@ async fn store_user_subscription_token(
 pub async fn insert_subscriber(
     transaction: &mut Transaction<'_, Postgres>,
     new_subscriber: &NewSubscriber,
-) -> Result<Uuid, Error> {
+) -> Result<Uuid, sqlx::Error> {
     let subscriber_id = Uuid::new_v4();
     let query = sqlx::query!(
         r#"
@@ -221,36 +255,7 @@ fn generate_subscription_token() -> String {
         .collect()
 }
 
-/// Returns `true` if the input satisfies all our validation constraints
-/// on subscriber names, `false` otherwise.
-pub fn is_valid_name(s: &str) -> bool {
-    // `.trim()` returns a view over the input `s` without trailing
-    // whitespace-like characters.
-    // `.is_empty` checks if the view contains any character.
-    let is_empty_or_whitespace = s.trim().is_empty();
-
-    // A grapheme is defined by the Unicode standard as a "user-perceived"
-    // character: `å` is a single grapheme, but it is composed of two characters
-    // (`a` and `̊`).
-    //
-    // `graphemes` returns an iterator over the graphemes in the input `s`.
-    // `true` specifies that we want to use the extended grapheme definition set,
-    // the recommended one.
-    let is_too_long = s.graphemes(true).count() > 256;
-
-    // Iterate over all characters in the input `s` to check if any of them matches
-    // one of the characters in the forbidden array.
-    let forbidden_characters = ['/', '(', ')', '"', '<', '>', '\\', '{', '}'];
-    let contains_forbidden_characters = s.chars().any(|g| forbidden_characters.contains(&g));
-
-    // Return `false` if any of our conditions have been violated
-    !(is_empty_or_whitespace || is_too_long || contains_forbidden_characters)
-}
-
-fn error_chain_fmt(
-    err: &impl std::error::Error,
-    format: &mut std::fmt::Formatter<'_>,
-) -> std::fmt::Result {
+fn error_chain_fmt(err: &impl std::error::Error, format: &mut Formatter<'_>) -> std::fmt::Result {
     write!(format, "{}\n", err)?;
 
     let mut current = err.source();
