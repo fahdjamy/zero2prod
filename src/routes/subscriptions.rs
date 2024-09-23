@@ -14,23 +14,18 @@ use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
 use crate::email_client::EmailClient;
 use crate::startup::ApplicationBaseUrl;
 
-#[derive(Debug)]
 pub enum SubscribeError {
+    PoolError(sqlx::Error),
     ValidationError(String),
-    DatabaseError(sqlx::Error),
     SendEmailError(reqwest::Error),
     StoreTokenError(StoreTokenError),
+    InsertSubscriberError(sqlx::Error),
+    TransactionCommitError(sqlx::Error),
 }
 
 impl From<reqwest::Error> for SubscribeError {
     fn from(e: reqwest::Error) -> Self {
         Self::SendEmailError(e)
-    }
-}
-
-impl From<sqlx::Error> for SubscribeError {
-    fn from(e: sqlx::Error) -> Self {
-        Self::DatabaseError(e)
     }
 }
 
@@ -48,18 +43,55 @@ impl From<String> for SubscribeError {
 
 impl std::fmt::Display for SubscribeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "failed to create a new subscriber")
+        match self {
+            SubscribeError::ValidationError(err) => write!(f, "{}", err),
+            SubscribeError::PoolError(_) => write!(f, "Failed to acquire database connection pool"),
+            SubscribeError::InsertSubscriberError(_) => {
+                write!(f, "Failed to save the new subscriber")
+            }
+            SubscribeError::TransactionCommitError(_) => {
+                write!(
+                    f,
+                    "Failed to commit all changes and save new subscriber information plus token"
+                )
+            }
+            SubscribeError::SendEmailError(_) => write!(f, "Failed to sent confirmation error"),
+            SubscribeError::StoreTokenError(_) => write!(
+                f,
+                "Failed to save confirmation token for then new subscriber"
+            ),
+        }
     }
 }
 
-impl std::error::Error for SubscribeError {}
+impl std::fmt::Debug for SubscribeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
+}
+
+impl std::error::Error for SubscribeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            // &str does not implement `Error` - we consider it the root cause
+            SubscribeError::ValidationError(_) => None,
+            SubscribeError::PoolError(e) => Some(e),
+            SubscribeError::SendEmailError(e) => Some(e),
+            SubscribeError::InsertSubscriberError(e) => Some(e),
+            SubscribeError::TransactionCommitError(e) => Some(e),
+            SubscribeError::StoreTokenError(e) => Some(e),
+        }
+    }
+}
 
 impl ResponseError for SubscribeError {
     fn status_code(&self) -> StatusCode {
         match self {
             SubscribeError::ValidationError(_) => StatusCode::BAD_REQUEST,
-            SubscribeError::DatabaseError(_)
+            SubscribeError::PoolError(_)
             | SubscribeError::SendEmailError(_)
+            | SubscribeError::InsertSubscriberError(_)
+            | SubscribeError::TransactionCommitError(_)
             | SubscribeError::StoreTokenError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -138,9 +170,11 @@ pub async fn subscribe(
     // `form.0` gives us access to the underlying `FormData`
     let new_subscriber = form.0.try_into()?;
 
-    let mut transaction = db_pool.begin().await?;
+    let mut transaction = db_pool.begin().await.map_err(SubscribeError::PoolError)?;
 
-    let subscriber_id = insert_subscriber(&mut transaction, &new_subscriber).await?;
+    let subscriber_id = insert_subscriber(&mut transaction, &new_subscriber)
+        .await
+        .map_err(SubscribeError::InsertSubscriberError)?;
 
     // generate a confirmation token to be used to make user from pending to confirmed
     let subscription_token = generate_subscription_token();
@@ -150,7 +184,10 @@ pub async fn subscribe(
     // on our behalf - we don't need an explicit `map_err` anymore.
     store_user_subscription_token(&mut transaction, subscriber_id, &subscription_token).await?;
 
-    transaction.commit().await?;
+    transaction
+        .commit()
+        .await
+        .map_err(SubscribeError::TransactionCommitError)?;
 
     // Email the new subscriber.
     send_confirmation(
