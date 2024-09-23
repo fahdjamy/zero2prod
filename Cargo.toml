@@ -39,6 +39,13 @@ rand = { version = "0.8", features = ["std_rng"] }
 # It provides a derive macro to generate most of the code we just wrote by hand.
 thiserror = "1.0.64"
 
+# anyhow::Error is a wrapper around a dynamic error type. anyhow::Error works a lot like Box<dyn std::error::Error>,
+# but with these differences:
+# - anyhow::Error requires that the error is Send, Sync, and 'static.
+# - anyhow::Error guarantees that a backtrace is available, even if the underlying error type does not provide one.
+# - anyhow::Error is represented as a narrow pointer — exactly one word in size instead of two.
+anyhow = "1.0.89"
+
 validator = { version = "0.18.1", features = ["derive"] }
 # environment variables are strings for the config crate,
 # and it will fail to pick up integers if using the standard deserialization routine from serde.
