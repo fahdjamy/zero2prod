@@ -35,6 +35,10 @@ unicode-segmentation = "1.11.0"
 # we'll use crate for https://en.wikipedia.org/wiki/Cryptographically_secure_pseudorandom_number_generator
 rand = { version = "0.8", features = ["std_rng"] }
 
+# Helps to generate boilerplate code for errors
+# It provides a derive macro to generate most of the code we just wrote by hand.
+thiserror = "1.0.64"
+
 validator = { version = "0.18.1", features = ["derive"] }
 # environment variables are strings for the config crate,
 # and it will fail to pick up integers if using the standard deserialization routine from serde.

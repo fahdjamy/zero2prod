@@ -14,25 +14,35 @@ use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
 use crate::email_client::EmailClient;
 use crate::startup::ApplicationBaseUrl;
 
+// the thiserror receives, at compile-time, the definition of SubscribeError as input and returns
+// another stream of tokens as output - it generates new Rust code, which is then compiled into the
+// final binary
+//
+// - #[error(/* */)] defines the Display representation of the enum variant it is applied to. E.g.
+// Display will return Failed to send a confirmation email. when invoked on an instance of
+// SubscribeError::SendEmailError. You can interpolate values in the final representation -
+// e.g. the {0} in #[error("{0}")] on top of ValidationError is referring to the wrapped String
+// field, mimicking the syntax to access fields on tuple structs (i.e.self.0).
+//
+// - #[source] is used to denote what should be returned as root cause in Error::source;
+//
+// - #[from] automatically derives an implementation of From for the type it has been applied to into
+// the top-level error type (e.g.impl From<StoreTokenError> for SubscribeError {/* */}). The field annotated with #[from]”
+
+#[derive(thiserror::Error)]
 pub enum SubscribeError {
-    PoolError(sqlx::Error),
+    #[error("Failed to acquire database connection pool")]
+    PoolError(#[source] sqlx::Error),
+    #[error("{0}")]
     ValidationError(String),
-    SendEmailError(reqwest::Error),
-    StoreTokenError(StoreTokenError),
-    InsertSubscriberError(sqlx::Error),
-    TransactionCommitError(sqlx::Error),
-}
-
-impl From<reqwest::Error> for SubscribeError {
-    fn from(e: reqwest::Error) -> Self {
-        Self::SendEmailError(e)
-    }
-}
-
-impl From<StoreTokenError> for SubscribeError {
-    fn from(e: StoreTokenError) -> Self {
-        Self::StoreTokenError(e)
-    }
+    #[error("Failed to acquire database connection pool")]
+    SendEmailError(#[from] reqwest::Error),
+    #[error("Failed to send confirmation error")]
+    StoreTokenError(#[from] StoreTokenError),
+    #[error("Failed to save the new subscriber in db")]
+    InsertSubscriberError(#[source] sqlx::Error),
+    #[error("Failed to commit all changes and save new subscriber information plus token")]
+    TransactionCommitError(#[source] sqlx::Error),
 }
 
 impl From<String> for SubscribeError {
@@ -41,46 +51,9 @@ impl From<String> for SubscribeError {
     }
 }
 
-impl std::fmt::Display for SubscribeError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SubscribeError::ValidationError(err) => write!(f, "{}", err),
-            SubscribeError::PoolError(_) => write!(f, "Failed to acquire database connection pool"),
-            SubscribeError::InsertSubscriberError(_) => {
-                write!(f, "Failed to save the new subscriber")
-            }
-            SubscribeError::TransactionCommitError(_) => {
-                write!(
-                    f,
-                    "Failed to commit all changes and save new subscriber information plus token"
-                )
-            }
-            SubscribeError::SendEmailError(_) => write!(f, "Failed to sent confirmation error"),
-            SubscribeError::StoreTokenError(_) => write!(
-                f,
-                "Failed to save confirmation token for then new subscriber"
-            ),
-        }
-    }
-}
-
 impl std::fmt::Debug for SubscribeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         error_chain_fmt(self, f)
-    }
-}
-
-impl std::error::Error for SubscribeError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            // &str does not implement `Error` - we consider it the root cause
-            SubscribeError::ValidationError(_) => None,
-            SubscribeError::PoolError(e) => Some(e),
-            SubscribeError::SendEmailError(e) => Some(e),
-            SubscribeError::InsertSubscriberError(e) => Some(e),
-            SubscribeError::TransactionCommitError(e) => Some(e),
-            SubscribeError::StoreTokenError(e) => Some(e),
-        }
     }
 }
 
