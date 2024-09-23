@@ -12,7 +12,6 @@ use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
 use crate::email_client::EmailClient;
 use crate::startup::ApplicationBaseUrl;
 
-#[derive(Debug)]
 pub struct StoreTokenError(Error);
 
 impl std::fmt::Display for StoreTokenError {
@@ -21,6 +20,22 @@ impl std::fmt::Display for StoreTokenError {
             f,
             "Database error encountered while storing a subscription token"
         )
+    }
+}
+
+impl std::fmt::Debug for StoreTokenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
+}
+
+impl std::error::Error for StoreTokenError {
+    // source is useful when writing code that needs to handle a variety of errors: it provides
+    // a structured way to navigate the error chain without having to know anything about
+    // the specific error type you are working with.
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        // The compiler transparently casts `&sqlx::Error` into a `&dyn Error`
+        Some(&self.0)
     }
 }
 
@@ -230,4 +245,20 @@ pub fn is_valid_name(s: &str) -> bool {
 
     // Return `false` if any of our conditions have been violated
     !(is_empty_or_whitespace || is_too_long || contains_forbidden_characters)
+}
+
+fn error_chain_fmt(
+    err: &impl std::error::Error,
+    format: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    write!(format, "{}\n", err)?;
+
+    let mut current = err.source();
+
+    // Iterates over the whole chain of errors that led to the failure we are trying to print.
+    while let Some(cause) = current {
+        writeln!(format, "Caused by:\n\t{}", cause)?;
+        current = cause.source();
+    }
+    Ok(())
 }
