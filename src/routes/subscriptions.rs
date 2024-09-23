@@ -1,5 +1,6 @@
 //! src.routes.subscriptions "//!: The double exclamation mark indicates an inner documentation comment"
-use actix_web::{web, HttpResponse};
+
+use actix_web::{web, HttpResponse, ResponseError};
 use chrono::Utc;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
@@ -10,6 +11,20 @@ use uuid::Uuid;
 use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
 use crate::email_client::EmailClient;
 use crate::startup::ApplicationBaseUrl;
+
+#[derive(Debug)]
+pub struct StoreTokenError(Error);
+
+impl std::fmt::Display for StoreTokenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Database error encountered while storing a subscription token"
+        )
+    }
+}
+
+impl ResponseError for StoreTokenError {}
 
 // this is a Library create because it doesn't contain a main function
 #[derive(serde::Deserialize)]
@@ -52,37 +67,37 @@ pub async fn subscribe(
     db_pool: web::Data<PgPool>,
     email_client: web::Data<EmailClient>,
     base_url: web::Data<ApplicationBaseUrl>,
-) -> HttpResponse {
+) -> Result<HttpResponse, actix_web::Error> {
     if !is_valid_name(&form.name) {
-        return HttpResponse::BadRequest().finish();
+        return Ok(HttpResponse::BadRequest().finish());
     }
     // `web::Form` is a wrapper around `FormData` (web::Form is a struct tuple)
     // `form.0` gives us access to the underlying `FormData`
     let new_subscriber = match form.0.try_into() {
         Ok(name) => name,
-        Err(_) => return HttpResponse::BadRequest().finish(),
+        Err(_) => return Ok(HttpResponse::BadRequest().finish()),
     };
 
     let mut transaction = match db_pool.begin().await {
         Ok(transaction) => transaction,
-        Err(_) => return HttpResponse::InternalServerError().finish(),
+        Err(_) => return Ok(HttpResponse::InternalServerError().finish()),
     };
 
     let subscriber_id = match insert_subscriber(&mut transaction, &new_subscriber).await {
         Ok(subscriber_id) => subscriber_id,
-        Err(_) => return HttpResponse::InternalServerError().finish(),
+        Err(_) => return Ok(HttpResponse::InternalServerError().finish()),
     };
-    let confirmation_token = generate_subscription_token();
 
-    if store_user_subscription_token(&mut transaction, subscriber_id, &confirmation_token)
-        .await
-        .is_err()
-    {
-        return HttpResponse::InternalServerError().finish();
-    }
+    // generate a confirmation token to be used to make user from pending to confirmed
+    let subscription_token = generate_subscription_token();
+
+    // store the user's generated subscription token
+    // The `?` operator transparently invokes the `Into` trait
+    // on our behalf - we don't need an explicit `map_err` anymore.
+    store_user_subscription_token(&mut transaction, subscriber_id, &subscription_token).await?;
 
     if transaction.commit().await.is_err() {
-        return HttpResponse::InternalServerError().finish();
+        return Ok(HttpResponse::InternalServerError().finish());
     }
 
     // Email the new subscriber.
@@ -90,13 +105,13 @@ pub async fn subscribe(
         &base_url.0,
         &email_client,
         new_subscriber,
-        &confirmation_token,
+        &subscription_token,
     )
     .await;
     if result.is_err() {
-        return HttpResponse::InternalServerError().finish();
+        return Ok(HttpResponse::InternalServerError().finish());
     }
-    HttpResponse::Ok().finish()
+    Ok(HttpResponse::Ok().finish())
 }
 
 #[tracing::instrument(
@@ -130,12 +145,12 @@ async fn send_confirmation(
         .await
 }
 
-#[tracing::instrument(name = "Creating new subscriber", skip(db_pool, subscriber_id))]
+#[tracing::instrument(name = "Creating new subscriber", skip(transaction, subscriber_id))]
 async fn store_user_subscription_token(
     transaction: &mut Transaction<'_, Postgres>,
     subscriber_id: Uuid,
     subscription_token: &str,
-) -> Result<(), Error> {
+) -> Result<(), StoreTokenError> {
     let query = sqlx::query!(
         r#"INSERT INTO subscription_tokens (subscription_token, subscriber_id)
         VALUES ($1, $2)"#,
@@ -145,12 +160,16 @@ async fn store_user_subscription_token(
 
     transaction.execute(query).await.map_err(|e| {
         tracing::error!("Failed to execute query: {:?}", e);
-        return e;
+        // Wrapping the underlying error with our custom StoreTokenError error.
+        return StoreTokenError(e);
     })?;
     Ok(())
 }
 
-#[tracing::instrument(name = "Saving a new subscriber in DB", skip(new_subscriber, pool))]
+#[tracing::instrument(
+    name = "Saving a new subscriber in DB",
+    skip(new_subscriber, transaction)
+)]
 pub async fn insert_subscriber(
     transaction: &mut Transaction<'_, Postgres>,
     new_subscriber: &NewSubscriber,
