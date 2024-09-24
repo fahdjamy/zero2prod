@@ -9,8 +9,8 @@ use tracing_actix_web::TracingLogger;
 
 use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
-use crate::routes::subscribe;
 use crate::routes::{check_health, confirm};
+use crate::routes::{publish_newsletter, subscribe};
 
 /// Read-more about the endpoints
 ///     POST /subscriptions will:
@@ -113,9 +113,10 @@ pub fn run(
             // middlewares are added using the method `wrap` in `App`
             // will automatically add a requestId
             .wrap(TracingLogger::default())
-            .route("/health_check", web::get().to(check_health))
             .route("/subscriptions", web::post().to(subscribe))
+            .route("/health_check", web::get().to(check_health))
             .route("/subscriptions/confirm", web::get().to(confirm))
+            .route("/newsletters", web::post().to(publish_newsletter))
             .route("/{name}", web::get().to(greet))
             .app_data(db_pool.clone())
             .app_data(base_url.clone())

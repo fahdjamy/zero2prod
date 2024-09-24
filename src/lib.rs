@@ -1,4 +1,9 @@
 //! src/lib.rs
+//!
+//!
+
+pub use configuration::DatabaseSettings;
+
 pub mod configuration;
 pub mod domain;
 pub mod email_client;
