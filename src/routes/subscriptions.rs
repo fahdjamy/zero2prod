@@ -217,7 +217,7 @@ async fn store_user_subscription_token(
     transaction.execute(query).await.map_err(|e| {
         tracing::error!("Failed to execute query: {:?}", e);
         // Wrapping the underlying error with our custom StoreTokenError error.
-        return StoreTokenError(e);
+        StoreTokenError(e)
     })?;
     Ok(())
 }
@@ -244,7 +244,7 @@ pub async fn insert_subscriber(
 
     transaction.execute(query).await.map_err(|err| {
         tracing::error!("failed to execute query: {:?}", err);
-        return err;
+        err
         // Using the `?` operator to return early
         // if the function failed, returning a sqlx::Error
     })?;
@@ -266,7 +266,7 @@ pub fn error_chain_fmt(
     err: &impl std::error::Error,
     format: &mut Formatter<'_>,
 ) -> std::fmt::Result {
-    write!(format, "{}\n", err)?;
+    writeln!(format, "{}", err)?;
 
     let mut current = err.source();
 
