@@ -197,7 +197,7 @@ async fn send_confirmation(
         confirmation_link
     );
     email_client
-        .send_email(new_subscriber.email, subject, html_body, text_content)
+        .send_email(&new_subscriber.email, subject, html_body, text_content)
         .await
 }
 
@@ -262,7 +262,10 @@ fn generate_subscription_token() -> String {
         .collect()
 }
 
-fn error_chain_fmt(err: &impl std::error::Error, format: &mut Formatter<'_>) -> std::fmt::Result {
+pub fn error_chain_fmt(
+    err: &impl std::error::Error,
+    format: &mut Formatter<'_>,
+) -> std::fmt::Result {
     write!(format, "{}\n", err)?;
 
     let mut current = err.source();
