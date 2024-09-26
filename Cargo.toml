@@ -46,6 +46,9 @@ thiserror = "1.0.64"
 # - anyhow::Error is represented as a narrow pointer — exactly one word in size instead of two.
 anyhow = "1.0.89"
 
+#for econding base64
+base64 = "0.22.1"
+
 validator = { version = "0.18.1", features = ["derive"] }
 # environment variables are strings for the config crate,
 # and it will fail to pick up integers if using the standard deserialization routine from serde.
