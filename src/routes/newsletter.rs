@@ -6,6 +6,8 @@ use actix_web::http::header::{HeaderMap, HeaderValue};
 use actix_web::http::{header, StatusCode};
 use actix_web::{HttpRequest, HttpResponse, ResponseError};
 use anyhow::Context;
+use argon2::password_hash::SaltString;
+use argon2::{Algorithm, Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier, Version};
 use base64::Engine;
 use secrecy::ExposeSecret;
 use secrecy::Secret;
@@ -82,6 +84,7 @@ pub async fn publish_newsletter(
     body: actix_web::web::Json<BodyData>,
     email_client: actix_web::web::Data<EmailClient>,
 ) -> Result<HttpResponse, PublishError> {
+    let mut user_id = None;
     let basic_credentials = basic_auth(request.headers())
         // Bubble up the error, performing the necessary conversion
         .map_err(|e| PublishError::AuthError(e))?;
@@ -91,8 +94,18 @@ pub async fn publish_newsletter(
         &tracing::field::display(&basic_credentials.username),
     );
 
-    let user_id = validate_credentials(basic_credentials, &pool).await?;
-    tracing::Span::current().record("user_id", &tracing::field::display(&user_id));
+    // let user_id = validate_credentials(basic_credentials, &pool).await?;
+
+    if let Some((stored_user_id, _stored_user_password)) =
+        get_stored_user_details(basic_credentials, &pool).await?
+    {
+        user_id = Some(stored_user_id)
+    }
+
+    tracing::Span::current().record(
+        "user_id",
+        &tracing::field::display(user_id.unwrap().to_string()),
+    );
 
     let subscribers = get_confirmed_subscriber(&pool).await?;
 
@@ -207,26 +220,57 @@ fn basic_auth(headers: &HeaderMap) -> Result<Credentials, anyhow::Error> {
     })
 }
 
-async fn validate_credentials(
+async fn get_stored_user_details(
     credentials: Credentials,
     pool: &PgPool,
-) -> Result<uuid::Uuid, PublishError> {
-    let user_id: Option<_> = sqlx::query!(
+) -> Result<Option<(uuid::Uuid, Secret<String>)>, PublishError> {
+    // let password_hash =
+    //     compute_password_hash(credentials.password).context("failed to hash password")?;
+    let row = sqlx::query!(
         r#"
-        SELECT user_id
+        SELECT user_id, password_hash
         FROM users
-        WHERE username = $1 AND password = $2
+        WHERE username = $1
         "#,
-        credentials.username,
-        credentials.password.expose_secret()
+        credentials.username
     )
     .fetch_optional(pool)
     .await
-    .context("Failed to perform a query to validate auth credentials.")
-    .map_err(PublishError::UnexpectedError)?;
+    .context("Failed to performed a query to retrieve stored credentials.")?
+    .map(|row| (row.user_id, Secret::new(row.password_hash)));
+    Ok(row)
+}
 
-    user_id
-        .map(|r| r.user_id)
-        .ok_or_else(|| anyhow::anyhow!("Invalid username and/or password"))
+pub fn compute_password_hash(password: Secret<String>) -> Result<Secret<String>, anyhow::Error> {
+    // https://medium.com/coderhack-com/coderhack-cryptography-libraries-and-uses-in-rust-31957242299f
+
+    let salt = SaltString::generate(&mut rand::thread_rng());
+    let password_hash = Argon2::new(
+        Algorithm::Argon2id,
+        Version::V0x13,
+        Params::new(15000, 2, 1, None).unwrap(),
+    )
+    .hash_password(password.expose_secret().as_bytes(), &salt)?
+    .to_string();
+    Ok(Secret::new(password_hash))
+}
+
+#[tracing::instrument(
+    name = "Validate credentials",
+    skip(expected_password_hash, password_candidate)
+)]
+fn verify_password_hash(
+    expected_password_hash: Secret<String>,
+    password_candidate: Secret<String>,
+) -> Result<(), PublishError> {
+    let expected_password_hash = PasswordHash::new(expected_password_hash.expose_secret())
+        .context("Failed to parse hash in PHC string format.")?;
+
+    Argon2::default()
+        .verify_password(
+            password_candidate.expose_secret().as_bytes(),
+            &expected_password_hash,
+        )
+        .context("Invalid password.")
         .map_err(PublishError::AuthError)
 }
