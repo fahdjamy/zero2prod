@@ -96,7 +96,7 @@ pub async fn publish_newsletter(
 
     // let user_id = validate_credentials(basic_credentials, &pool).await?;
 
-    if let Some((stored_user_id, _stored_user_password)) =
+    if let Some((stored_user_id, _stored_user_password, _salt)) =
         get_stored_user_details(basic_credentials, &pool).await?
     {
         user_id = Some(stored_user_id)
@@ -223,12 +223,12 @@ fn basic_auth(headers: &HeaderMap) -> Result<Credentials, anyhow::Error> {
 async fn get_stored_user_details(
     credentials: Credentials,
     pool: &PgPool,
-) -> Result<Option<(uuid::Uuid, Secret<String>)>, PublishError> {
+) -> Result<Option<(uuid::Uuid, Secret<String>, String)>, PublishError> {
     // let password_hash =
     //     compute_password_hash(credentials.password).context("failed to hash password")?;
     let row = sqlx::query!(
         r#"
-        SELECT user_id, password_hash
+        SELECT user_id, password_hash, salt
         FROM users
         WHERE username = $1
         "#,
@@ -237,7 +237,7 @@ async fn get_stored_user_details(
     .fetch_optional(pool)
     .await
     .context("Failed to performed a query to retrieve stored credentials.")?
-    .map(|row| (row.user_id, Secret::new(row.password_hash)));
+    .map(|row| (row.user_id, Secret::new(row.password_hash), row.salt));
     Ok(row)
 }
 
@@ -273,4 +273,41 @@ fn verify_password_hash(
         )
         .context("Invalid password.")
         .map_err(PublishError::AuthError)
+}
+
+async fn validate_credentials(
+    credentials: Credentials,
+    pg_pool: &PgPool,
+) -> Result<uuid::Uuid, PublishError> {
+    let row: Option<_> = sqlx::query!(
+        r#"
+        SELECT user_id, password_hash
+        FROM users
+        WHERE username = $1
+        "#,
+        credentials.username
+    )
+    .fetch_optional(&pg_pool)
+    .await
+    .context("Failed to retrieve user credentials")
+    .map_err(PublishError::UnexpectedError)?;
+
+    let (expected_password_hash, user_id) = match row {
+        None => return Err(PublishError::AuthError(anyhow::anyhow!("Unknown username"))),
+        Some(row) => (row.password_hash, row.user_id),
+    };
+
+    let expected_password_hash = PasswordHash::new(&expected_password_hash)
+        .context("Failed to parse hash into PHC string format")
+        .map_err(PublishError::UnexpectedError)?;
+
+    Argon2::default()
+        .verify_password(
+            credentials.password.expose_secret().as_bytes(),
+            &expected_password_hash,
+        )
+        .context("Invalid password")
+        .map_err(PublishError::AuthError)?;
+
+    Ok(user_id)
 }
