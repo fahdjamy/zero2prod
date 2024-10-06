@@ -84,7 +84,6 @@ pub async fn publish_newsletter(
     body: actix_web::web::Json<BodyData>,
     email_client: actix_web::web::Data<EmailClient>,
 ) -> Result<HttpResponse, PublishError> {
-    let mut user_id = None;
     let basic_credentials = basic_auth(request.headers())
         // Bubble up the error, performing the necessary conversion
         .map_err(|e| PublishError::AuthError(e))?;
@@ -94,18 +93,9 @@ pub async fn publish_newsletter(
         &tracing::field::display(&basic_credentials.username),
     );
 
-    // let user_id = validate_credentials(basic_credentials, &pool).await?;
+    let user_id = validate_credentials(basic_credentials, &pool).await?;
 
-    if let Some((stored_user_id, _stored_user_password, _salt)) =
-        get_stored_user_details(basic_credentials, &pool).await?
-    {
-        user_id = Some(stored_user_id)
-    }
-
-    tracing::Span::current().record(
-        "user_id",
-        &tracing::field::display(user_id.unwrap().to_string()),
-    );
+    tracing::Span::current().record("user_id", &tracing::field::display(user_id.to_string()));
 
     let subscribers = get_confirmed_subscriber(&pool).await?;
 
@@ -220,27 +210,6 @@ fn basic_auth(headers: &HeaderMap) -> Result<Credentials, anyhow::Error> {
     })
 }
 
-async fn get_stored_user_details(
-    credentials: Credentials,
-    pool: &PgPool,
-) -> Result<Option<(uuid::Uuid, Secret<String>, String)>, PublishError> {
-    // let password_hash =
-    //     compute_password_hash(credentials.password).context("failed to hash password")?;
-    let row = sqlx::query!(
-        r#"
-        SELECT user_id, password_hash, salt
-        FROM users
-        WHERE username = $1
-        "#,
-        credentials.username
-    )
-    .fetch_optional(pool)
-    .await
-    .context("Failed to performed a query to retrieve stored credentials.")?
-    .map(|row| (row.user_id, Secret::new(row.password_hash), row.salt));
-    Ok(row)
-}
-
 pub fn compute_password_hash(password: Secret<String>) -> Result<Secret<String>, anyhow::Error> {
     // https://medium.com/coderhack-com/coderhack-cryptography-libraries-and-uses-in-rust-31957242299f
 
@@ -287,7 +256,7 @@ async fn validate_credentials(
         "#,
         credentials.username
     )
-    .fetch_optional(&pg_pool)
+    .fetch_optional(pg_pool)
     .await
     .context("Failed to retrieve user credentials")
     .map_err(PublishError::UnexpectedError)?;

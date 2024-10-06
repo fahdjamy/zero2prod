@@ -1,11 +1,10 @@
+use argon2::password_hash::SaltString;
+use argon2::{Argon2, PasswordHasher};
 use once_cell::sync::Lazy;
-use secrecy::ExposeSecret;
-use secrecy::Secret;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 use wiremock::MockServer;
 use zero2prod::configuration::{get_configuration, DatabaseSettings};
-use zero2prod::routes::compute_password_hash;
 use zero2prod::startup::{get_connection_pool, Application};
 use zero2prod::telemetry::{get_subscriber, init_subscriber};
 
@@ -105,14 +104,21 @@ impl TestUser {
     }
 
     async fn store(&self, pool: &PgPool) {
-        let password_hash = compute_password_hash(Secret::new(self.password.clone()))
-            .expect("Failed to hash password");
+        let salt = SaltString::generate(&mut rand::thread_rng());
+
+        // We don't care about the exact Argon2 parameters here
+        // given that it's for testing purposes!
+        let password_hash = Argon2::default()
+            .hash_password(self.password.as_bytes(), &salt)
+            .unwrap()
+            .to_string();
+
         sqlx::query!(
             "INSERT INTO users (user_id, username, password_hash)
             VALUES ($1, $2, $3)",
             self.user_id,
             self.username,
-            password_hash.expose_secret(),
+            password_hash,
         )
         .execute(pool)
         .await
