@@ -1,6 +1,7 @@
 use crate::domain::SubscriberEmail;
 use crate::email_client::EmailClient;
 use crate::routes::error_chain_fmt;
+use crate::telemetry::spawn_blocking_with_tracing;
 use actix_web::body::BoxBody;
 use actix_web::http::header::{HeaderMap, HeaderValue};
 use actix_web::http::{header, StatusCode};
@@ -224,63 +225,48 @@ pub fn compute_password_hash(password: Secret<String>) -> Result<Secret<String>,
     Ok(Secret::new(password_hash))
 }
 
-#[tracing::instrument(
-    name = "Validate credentials",
-    skip(expected_password_hash, password_candidate)
-)]
-fn verify_password_hash(
-    expected_password_hash: Secret<String>,
-    password_candidate: Secret<String>,
-) -> Result<(), PublishError> {
-    let expected_password_hash = PasswordHash::new(expected_password_hash.expose_secret())
-        .context("Failed to parse hash in PHC string format.")?;
-
-    Argon2::default()
-        .verify_password(
-            password_candidate.expose_secret().as_bytes(),
-            &expected_password_hash,
-        )
-        .context("Invalid password.")
-        .map_err(PublishError::AuthError)
-}
-
+#[tracing::instrument(name = "Validate Credentials", skip(credentials, pg_pool))]
 async fn validate_credentials(
     credentials: Credentials,
     pg_pool: &PgPool,
 ) -> Result<uuid::Uuid, PublishError> {
-    let row: Option<_> = sqlx::query!(
-        r#"
-        SELECT user_id, password_hash
-        FROM users
-        WHERE username = $1
-        "#,
-        credentials.username
-    )
-    .fetch_optional(pg_pool)
-    .await
-    .context("Failed to retrieve user credentials")
-    .map_err(PublishError::UnexpectedError)?;
-
-    let (user_id, expected_password_hash) = get_stored_credentials(&credentials.username, &pg_pool)
+    let (user_id, db_password_hash) = get_stored_credentials(&credentials.username, &pg_pool)
         .await
         .map_err(PublishError::UnexpectedError)?
         .ok_or_else(|| PublishError::AuthError(anyhow::anyhow!("Unknown Username")))?;
 
-    let expected_password_hash = PasswordHash::new(&expected_password_hash.expose_secret())
-        .context("Failed to parse hash into PHC string format")
-        .map_err(PublishError::UnexpectedError)?;
-
-    tracing::info_span!("Verify Password Hash")
-        .in_scope(|| {
-            Argon2::default().verify_password(
-                credentials.password.expose_secret().as_bytes(),
-                &expected_password_hash,
-            )
-        })
-        .context("Invalid password")
-        .map_err(PublishError::AuthError)?;
+    spawn_blocking_with_tracing(move || {
+        verify_password_hash(db_password_hash, credentials.password)
+    })
+    .await
+    // spawn_blocking is fallible - we have a nested Result here!
+    .context("Failed to spawn blocking task.")
+    .map_err(PublishError::UnexpectedError)?
+    .context("Invalid password")
+    .map_err(PublishError::AuthError)?;
 
     Ok(user_id)
+}
+
+#[tracing::instrument(
+    name = "Verify password hash",
+    skip(expected_password_hash, user_password)
+)]
+fn verify_password_hash(
+    expected_password_hash: Secret<String>,
+    user_password: Secret<String>,
+) -> Result<(), PublishError> {
+    let expected_password_hash = PasswordHash::new(expected_password_hash.expose_secret())
+        .context("Failed to parse hash in PHC string format.")
+        .map_err(PublishError::UnexpectedError)?;
+
+    Argon2::default()
+        .verify_password(
+            user_password.expose_secret().as_bytes(),
+            &expected_password_hash,
+        )
+        .context("Invalid password.")
+        .map_err(PublishError::AuthError)
 }
 
 #[tracing::instrument(name = "Get stored credentials", skip(username, pool))]
