@@ -2,14 +2,14 @@ use std::net::TcpListener;
 
 use actix_web::dev::Server;
 use actix_web::web::Data;
-use actix_web::{web, App, HttpRequest, HttpServer, Responder};
+use actix_web::{web, App, HttpServer};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use tracing_actix_web::TracingLogger;
 
 use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
-use crate::routes::{check_health, confirm};
+use crate::routes::{check_health, confirm, home, login, login_form};
 use crate::routes::{publish_newsletter, subscribe};
 
 /// Read-more about the endpoints
@@ -82,11 +82,6 @@ impl Application {
     }
 }
 
-async fn greet(req: HttpRequest) -> impl Responder {
-    let name = req.match_info().get("name").unwrap_or("world");
-    format!("Hi, {}", name)
-}
-
 // A wrapper type in order to retrieve the URL
 // in the `subscribe` handler.
 // Retrieval from the context, in actix-web, is type-based: using
@@ -113,11 +108,13 @@ pub fn run(
             // middlewares are added using the method `wrap` in `App`
             // will automatically add a requestId
             .wrap(TracingLogger::default())
+            .route("/", web::get().to(home))
+            .route("/login", web::post().to(login))
+            .route("/login", web::get().to(login_form))
             .route("/subscriptions", web::post().to(subscribe))
             .route("/health_check", web::get().to(check_health))
             .route("/subscriptions/confirm", web::get().to(confirm))
             .route("/newsletters", web::post().to(publish_newsletter))
-            .route("/{name}", web::get().to(greet))
             .app_data(db_pool.clone())
             .app_data(base_url.clone())
             .app_data(email_client.clone())
