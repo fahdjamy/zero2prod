@@ -34,6 +34,13 @@ impl ResponseError for LoginError {
             LoginError::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
+
+    fn error_response(&self) -> HttpResponse {
+        let encoded_err = urlencoding::Encoded(self.to_string().as_str());
+        HttpResponse::build(self.status_code())
+            .insert_header((LOCATION, format!("/login?error={}", encoded_err)))
+            .finish()
+    }
 }
 
 #[tracing::instrument(

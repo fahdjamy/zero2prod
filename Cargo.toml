@@ -52,6 +52,9 @@ base64 = "0.22.1"
 # for hashing
 argon2 = { version = "0.6.0-pre.1", features = ["std"] }
 
+# for encoding query parameters sent back to the user
+urlencoding = "2.1.3"
+
 validator = { version = "0.18.1", features = ["derive"] }
 # environment variables are strings for the config crate,
 # and it will fail to pick up integers if using the standard deserialization routine from serde.
