@@ -32,7 +32,7 @@ pub async fn validate_credentials(
     );
 
     if let Some((stored_user_id, stored_password_hash)) =
-        get_stored_credentials(&credentials.username, &pg_pool)
+        get_stored_credentials(&credentials.username, pg_pool)
             .await
             .map_err(AuthError::UnexpectedError)?
     {

@@ -48,7 +48,7 @@ pub async fn login(
         username: form.0.username,
         password: form.0.password,
     };
-    tracing::Span::current().record("username", &tracing::field::display(&credentials.username));
+    tracing::Span::current().record("username", tracing::field::display(&credentials.username));
     let user_id = validate_credentials(credentials, &pool)
         .await
         .map_err(|e| match e {
@@ -56,7 +56,7 @@ pub async fn login(
             e => LoginError::UnexpectedError(e.into()),
         })?;
 
-    tracing::Span::current().record("user_id", &tracing::field::display(&user_id));
+    tracing::Span::current().record("user_id", tracing::field::display(&user_id));
 
     Ok(HttpResponse::SeeOther()
         .insert_header((LOCATION, "/"))
