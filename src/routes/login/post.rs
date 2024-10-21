@@ -46,7 +46,7 @@ pub async fn login(
     tracing::Span::current().record("username", tracing::field::display(&credentials.username));
     match validate_credentials(credentials, &pool).await {
         Ok(user_id) => {
-            tracing::Span::current().record("user_id", &tracing::field::display(&user_id));
+            tracing::Span::current().record("user_id", tracing::field::display(&user_id));
             Ok(HttpResponse::SeeOther()
                 .insert_header((LOCATION, "/"))
                 .finish())
@@ -56,7 +56,7 @@ pub async fn login(
                 AuthError::InvalidCredentials(_) => LoginError::AuthError(error.into()),
                 AuthError::UnexpectedError(_) => LoginError::UnexpectedError(error.into()),
             };
-            let query_string = format!("error={}", e.to_string());
+            let query_string = format!("error={}", e);
             let hmac_tag = {
                 let mut mac =
                     Hmac::<Sha256>::new_from_slice(secret.expose_secret().as_bytes()).unwrap();
