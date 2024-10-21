@@ -3,6 +3,7 @@ use std::net::TcpListener;
 use actix_web::dev::Server;
 use actix_web::web::Data;
 use actix_web::{web, App, HttpServer};
+use secrecy::Secret;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use tracing_actix_web::TracingLogger;
@@ -65,6 +66,7 @@ impl Application {
             connection_pool,
             email_client,
             configuration.application.base_url,
+            configuration.application.hmac_secret,
         )?;
 
         // We "save" the bound port in one of `Application`'s fields
@@ -93,6 +95,7 @@ pub fn run(
     connection_pool: PgPool,
     email_client: EmailClient,
     base_url: String,
+    hmac_secret: Secret<String>,
 ) -> Result<Server, std::io::Error> {
     // Wrap the connection in a smart pointer (an ARC) https://doc.rust-lang.org/std/sync/struct.Arc.html
     // Wrap the pool using web::Data, which boils down to an Arc smart pointer
@@ -118,6 +121,7 @@ pub fn run(
             .app_data(db_pool.clone())
             .app_data(base_url.clone())
             .app_data(email_client.clone())
+            .app_data(Data::new(hmac_secret.clone()))
     })
     .listen(listener)?
     .run();
