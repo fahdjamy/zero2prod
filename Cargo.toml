@@ -103,7 +103,7 @@ features = [
 version = "0.12.7"
 default-features = false
 # We need the `json` feature flag to serialize/deserialize JSON payloads
-features = ["json", "rustls-tls"]
+features = ["json", "rustls-tls", "cookies"]
 
 [dev-dependencies]
 linkify = "0.10.0"
