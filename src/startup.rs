@@ -36,6 +36,9 @@ pub struct Application {
     server: Server,
 }
 
+#[derive(Clone)]
+pub struct HmacSecret(pub Secret<String>);
+
 impl Application {
     pub async fn build(configuration: Settings) -> Result<Self, std::io::Error> {
         //`connect_lazy_with` instead of `connect_lazy`
@@ -60,7 +63,7 @@ impl Application {
         );
         let listener = TcpListener::bind(address)?;
 
-        let port = listener.local_addr().unwrap().port();
+        let port = listener.local_addr()?.port();
         let server = run(
             listener,
             connection_pool,
@@ -121,7 +124,7 @@ pub fn run(
             .app_data(db_pool.clone())
             .app_data(base_url.clone())
             .app_data(email_client.clone())
-            .app_data(Data::new(hmac_secret.clone()))
+            .app_data(Data::new(HmacSecret(hmac_secret.clone())))
     })
     .listen(listener)?
     .run();

@@ -1,5 +1,6 @@
 use crate::authentication::{validate_credentials, AuthError, Credentials};
 use crate::routes::error_chain_fmt;
+use crate::startup::HmacSecret;
 use actix_web::error::InternalError;
 use actix_web::http::header::LOCATION;
 use actix_web::web::Form;
@@ -31,13 +32,13 @@ impl std::fmt::Debug for LoginError {
 }
 
 #[tracing::instrument(
-    skip(form, pool),
+    skip(form, pool, secret),
     fields(username=tracing::field::Empty, user_id=tracing::field::Empty)
 )]
 pub async fn login(
     form: Form<FormData>,
     pool: web::Data<PgPool>,
-    secret: web::Data<Secret<String>>,
+    secret: web::Data<HmacSecret>,
 ) -> Result<HttpResponse, InternalError<LoginError>> {
     let credentials = Credentials {
         username: form.0.username,
@@ -59,7 +60,7 @@ pub async fn login(
             let query_string = format!("error={}", e);
             let hmac_tag = {
                 let mut mac =
-                    Hmac::<Sha256>::new_from_slice(secret.expose_secret().as_bytes()).unwrap();
+                    Hmac::<Sha256>::new_from_slice(secret.0.expose_secret().as_bytes()).unwrap();
                 mac.update(query_string.as_bytes());
                 // Generate the HMAC tag
                 // Finalize and obtain the code: Generate the final HMAC tag using mac.finalize().
@@ -73,10 +74,16 @@ pub async fn login(
             let response = HttpResponse::SeeOther()
                 .insert_header((
                     LOCATION,
-                    format!("/login?{}&tag={:x?}", query_string, hmac_tag),
+                    format!(
+                        "/login?{}&tag={:x?}",
+                        query_string,
+                        hex::encode(hmac_tag).as_bytes()
+                    ),
                 ))
                 .finish();
             Err(InternalError::from_response(e, response))
         }
     }
 }
+
+// http://localhost:8001/login?error=Your%20account%20has%20been%20locked%2C%20please%20submit%20your%20details%20%3Ca%20href%3D%22https%3A%2F%2Fzero2prod.com%20%22%3Ehere%3C%2Fa%3E%20to%20resolve%20the%20issue
