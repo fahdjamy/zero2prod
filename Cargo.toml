@@ -46,6 +46,9 @@ thiserror = "1.0.64"
 # - anyhow::Error is represented as a narrow pointer — exactly one word in size instead of two.
 anyhow = "1.0.89"
 
+# actix-web-flash-messages provides a framework to work with flash messages in actix-web, modeled after Django’s message framework.
+actix-web-flash-messages = { version = "0.5.0", features = ["cookies"] }
+
 #for econding base64
 base64 = "0.22.1"
 
