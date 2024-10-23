@@ -37,11 +37,65 @@ pub struct TestApp {
     pub db_pool: PgPool,
     pub test_user: TestUser,
     pub email_server: MockServer,
+    pub api_client: reqwest::Client,
+}
+
+pub async fn spawn_app() -> TestApp {
+    // The first time `initialize` is invoked the code in `TRACING` is executed.
+    // All other invocations will instead skip execution.
+    Lazy::force(&TRACING);
+
+    // A mock server that'll stand in for Postmark's API
+    let email_server = MockServer::start().await;
+
+    let configuration = {
+        // Randomise configuration to ensure test isolation
+        let mut config = get_configuration().expect("failed to read configuration");
+        // create a different Database on every call to this function
+        config.database.database_name = Uuid::new_v4().to_string();
+        // Use a random OS port.
+        // Port 0 is special-cased at the OS level: trying to bind port 0 will trigger an OS scan
+        // for an available port which will then be bound to the application
+        config.application.port = 0;
+        config.email_client.base_url = email_server.uri();
+        config
+    };
+
+    configure_database(&configuration.database).await;
+
+    // Launch the application as a background task.
+    // Notice the .clone!
+    let application = Application::build(configuration.clone())
+        .await
+        .expect("failed to build application");
+    let application_port = application.port();
+    let _ = tokio::spawn(application.run_until_stopped());
+
+    let test_user = TestUser::generate();
+
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .cookie_store(true)
+        .build()
+        .unwrap();
+
+    // return app address to the caller
+    let test_app = TestApp {
+        test_user,
+        email_server,
+        api_client: client,
+        port: application_port,
+        db_pool: get_connection_pool(&configuration.database),
+        address: format!("http://127.0.0.1:{}", application_port),
+    };
+
+    test_app.test_user.store(&test_app.db_pool).await;
+    test_app
 }
 
 impl TestApp {
     pub async fn post_subscriptions(&self, body: String) -> reqwest::Response {
-        reqwest::Client::new()
+        self.api_client
             .post(&format!("{}/subscriptions", &self.address))
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(body)
@@ -51,7 +105,7 @@ impl TestApp {
     }
 
     pub async fn post_newsletter(&self, body: serde_json::Value) -> reqwest::Response {
-        reqwest::Client::new()
+        self.api_client
             .post(&format!("{}/newsletters", &self.address))
             // Random auth password/username credentials
             // reqwest will do all the base64 encoding
@@ -66,10 +120,7 @@ impl TestApp {
     where
         Body: serde::Serialize,
     {
-        reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .unwrap()
+        self.api_client
             .post(&format!("{}/login", &self.address))
             // This `reqwest` method makes sure that the body is URL-encoded
             // and the `Content-Type` header is set accordingly.
@@ -77,6 +128,19 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to execute request.")
+    }
+
+    // we'll only look at the HTML page, therefore
+    // we do not expose the underlying reqwest::Response
+    pub async fn get_login_html(&self) -> String {
+        self.api_client
+            .get(&format!("{}/login", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request.")
+            .text()
+            .await
+            .unwrap()
     }
 
     /// Extract the confirmation links embedded in the request to the email API.
@@ -146,53 +210,6 @@ impl TestUser {
         .await
         .expect("Failed to store test user.");
     }
-}
-
-// the function is changed to being asynchronous
-pub async fn spawn_app() -> TestApp {
-    // The first time `initialize` is invoked the code in `TRACING` is executed.
-    // All other invocations will instead skip execution.
-    Lazy::force(&TRACING);
-
-    // A mock server that'll stand in for Postmark's API
-    let email_server = MockServer::start().await;
-
-    let configuration = {
-        // Randomise configuration to ensure test isolation
-        let mut config = get_configuration().expect("failed to read configuration");
-        // create a different Database on every call to this function
-        config.database.database_name = Uuid::new_v4().to_string();
-        // Use a random OS port.
-        // Port 0 is special-cased at the OS level: trying to bind port 0 will trigger an OS scan
-        // for an available port which will then be bound to the application
-        config.application.port = 0;
-        config.email_client.base_url = email_server.uri();
-        config
-    };
-
-    configure_database(&configuration.database).await;
-
-    // Launch the application as a background task.
-    // Notice the .clone!
-    let application = Application::build(configuration.clone())
-        .await
-        .expect("failed to build application");
-    let application_port = application.port();
-    let _ = tokio::spawn(application.run_until_stopped());
-
-    let test_user = TestUser::generate();
-
-    // return app address to the caller
-    let test_app = TestApp {
-        test_user,
-        email_server,
-        port: application_port,
-        db_pool: get_connection_pool(&configuration.database),
-        address: format!("http://127.0.0.1:{}", application_port),
-    };
-
-    test_app.test_user.store(&test_app.db_pool).await;
-    test_app
 }
 
 async fn configure_database(config: &DatabaseSettings) -> PgPool {
