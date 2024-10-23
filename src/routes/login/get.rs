@@ -5,8 +5,12 @@ use actix_web_flash_messages::{IncomingFlashMessages, Level};
 use std::fmt::Write;
 
 pub async fn login_form(flash_messages: IncomingFlashMessages) -> HttpResponse {
+    // String implements std::fmt::Write. This means a String can be used as the destination for writeln!
+    // Without use std::fmt::Write;, the compiler doesn't know that you intend to use the Write trait from the std::fmt module
     let mut error_html = String::new();
     for m in flash_messages.iter().filter(|m| m.level() == Level::Error) {
+        // The writeln! macro works by taking a destination and a formatted string.
+        // It expects the destination to implement the std::fmt::Write trait.
         writeln!(error_html, "<p><i>{}</i></p>", m.content()).unwrap();
     }
 

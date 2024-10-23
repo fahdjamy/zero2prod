@@ -53,7 +53,7 @@ pub async fn login(
                 AuthError::InvalidCredentials(_) => LoginError::AuthError(error.into()),
                 AuthError::UnexpectedError(_) => LoginError::UnexpectedError(error.into()),
             };
-            FlashMessage::error(&e.to_string()).send();
+            FlashMessage::error(e.to_string()).send();
 
             let response = HttpResponse::SeeOther()
                 .insert_header((LOCATION, "/login"))
