@@ -68,6 +68,9 @@ htmlescape = "0.3.1"
 # for encoding and decoding byte strings
 #hex = "0.4.3"
 
+# provides session management for actix-web apps
+actix-session = { version = "0.10.1", features = ["redis-session-native-tls"] }
+
 validator = { version = "0.18.1", features = ["derive"] }
 # environment variables are strings for the config crate,
 # and it will fail to pick up integers if using the standard deserialization routine from serde.

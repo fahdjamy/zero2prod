@@ -8,6 +8,7 @@ use sqlx::ConnectOptions;
 
 #[derive(serde::Deserialize, Clone)]
 pub struct Settings {
+    pub redis_url: Secret<String>,
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
     pub email_client: EmailClientSettings,
