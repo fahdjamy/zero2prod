@@ -1,5 +1,6 @@
 use crate::authentication::{validate_credentials, AuthError, Credentials};
 use crate::routes::error_chain_fmt;
+use actix_session::Session;
 use actix_web::error::InternalError;
 use actix_web::http::header::LOCATION;
 use actix_web::web::Form;
@@ -29,10 +30,11 @@ impl std::fmt::Debug for LoginError {
 }
 
 #[tracing::instrument(
-    skip(form, pool),
+    skip(form, pool, session),
     fields(username=tracing::field::Empty, user_id=tracing::field::Empty)
 )]
 pub async fn login(
+    session: Session,
     form: Form<FormData>,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, InternalError<LoginError>> {
@@ -44,6 +46,15 @@ pub async fn login(
     match validate_credentials(credentials, &pool).await {
         Ok(user_id) => {
             tracing::Span::current().record("user_id", tracing::field::display(&user_id));
+            let _ = session
+                .insert("user_id", user_id)
+                .map_err(|e| {
+                    tracing::Span::current().record("user_id", tracing::field::display(&e));
+                })
+                .ok();
+            session
+                .insert("user_id", user_id)
+                .map_err(|e| login_redirect(LoginError::UnexpectedError(e.into())))?;
             Ok(HttpResponse::SeeOther()
                 .insert_header((LOCATION, "/"))
                 .finish())
@@ -61,6 +72,15 @@ pub async fn login(
             Err(InternalError::from_response(e, response))
         }
     }
+}
+
+// Redirect to the login page with an error message.
+fn login_redirect(e: LoginError) -> InternalError<LoginError> {
+    FlashMessage::error(e.to_string()).send();
+    let response = HttpResponse::SeeOther()
+        .insert_header((LOCATION, "/login"))
+        .finish();
+    InternalError::from_response(e, response)
 }
 
 // http://localhost:8001/login?error=Your%20account%20has%20been%20locked%2C%20please%20submit%20your%20details%20%3Ca%20href%3D%22https%3A%2F%2Fzero2prod.com%20%22%3Ehere%3C%2Fa%3E%20to%20resolve%20the%20issue

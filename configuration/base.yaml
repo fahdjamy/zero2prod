@@ -4,7 +4,7 @@ application:
   # on Digital Ocean as well for production!
   hmac_secret: "long-and-very-secret-random-key-needed-to-verify-message-integrity"
 
-redis_uri: "redis://127.0.0.1:6379"
+redis_url: "redis://127.0.0.1:6379"
 
 database:
   port: 5432
