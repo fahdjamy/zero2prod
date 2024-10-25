@@ -1,6 +1,7 @@
 use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
 use crate::routes::dashboard::admin_dashboard;
+use crate::routes::password::{change_password, change_password_form};
 use crate::routes::{check_health, confirm, home, login, login_form};
 use crate::routes::{publish_newsletter, subscribe};
 use actix_session::storage::RedisSessionStore;
@@ -140,8 +141,10 @@ pub async fn run(
             .route("/subscriptions", web::post().to(subscribe))
             .route("/health_check", web::get().to(check_health))
             .route("/subscriptions/confirm", web::get().to(confirm))
-            .route("/admin/dashboard", web::get().to(admin_dashboard))
             .route("/newsletters", web::post().to(publish_newsletter))
+            .route("/admin/dashboard", web::get().to(admin_dashboard))
+            .route("/admin/password", web::post().to(change_password))
+            .route("/admin/password", web::get().to(change_password_form))
             .app_data(db_pool.clone())
             .app_data(base_url.clone())
             .app_data(email_client.clone())

@@ -8,5 +8,5 @@ async fn must_be_logged_in_to_access_admin_dashboard() {
     let response = app.get_admin_dashboard().await;
 
     // Assert
-    assert_is_redirect_to(response, "/login");
+    assert_is_redirect_to(&response, "/login");
 }
