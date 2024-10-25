@@ -1,6 +1,6 @@
 use crate::authentication::{validate_credentials, AuthError, Credentials};
 use crate::routes::error_chain_fmt;
-use actix_session::Session;
+use crate::session_state::TypedSession;
 use actix_web::error::InternalError;
 use actix_web::http::header::LOCATION;
 use actix_web::web::Form;
@@ -34,7 +34,7 @@ impl std::fmt::Debug for LoginError {
     fields(username=tracing::field::Empty, user_id=tracing::field::Empty)
 )]
 pub async fn login(
-    session: Session,
+    session: TypedSession,
     form: Form<FormData>,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, InternalError<LoginError>> {
@@ -46,14 +46,10 @@ pub async fn login(
     match validate_credentials(credentials, &pool).await {
         Ok(user_id) => {
             tracing::Span::current().record("user_id", tracing::field::display(&user_id));
-            let _ = session
-                .insert("user_id", user_id)
-                .map_err(|e| {
-                    tracing::Span::current().record("user_id", tracing::field::display(&e));
-                })
-                .ok();
+            // renew a session to prevent Fixation Session Attacks
+            session.renew();
             session
-                .insert("user_id", user_id)
+                .insert_user_id(user_id)
                 .map_err(|e| login_redirect(LoginError::UnexpectedError(e.into())))?;
             Ok(HttpResponse::SeeOther()
                 .insert_header((LOCATION, "/"))

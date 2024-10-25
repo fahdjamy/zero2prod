@@ -112,6 +112,8 @@ default-features = false
 # We need the `json` feature flag to serialize/deserialize JSON payloads
 features = ["json", "rustls-tls", "cookies"]
 
+serde_json = "1.0.61"
+
 [dev-dependencies]
 linkify = "0.10.0"
 wiremock = "0.6.2"
@@ -121,7 +123,6 @@ fake = "2.9.2"
 # for property based testing
 quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
-serde_json = "1.0.61"
 serde_urlencoded = "0.7.1"
 # claims crate is used to get more informative error messages:
 claims = "0.7.1"
