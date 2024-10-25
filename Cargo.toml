@@ -92,6 +92,7 @@ tracing-bunyan-formatter = "0.3.9"
 # If we want it, we need to explicitly register a logger implementation to
 # redirect logs to our tracing subscriber for processing. thus this crate
 tracing-log = "0.2.0"
+serde_json = "1.0.121"
 
 # Using table-like toml syntax to avoid a super-long line!
 [dependencies.sqlx]
@@ -111,8 +112,6 @@ version = "0.12.7"
 default-features = false
 # We need the `json` feature flag to serialize/deserialize JSON payloads
 features = ["json", "rustls-tls", "cookies"]
-
-serde_json = "1.0.61"
 
 [dev-dependencies]
 linkify = "0.10.0"
