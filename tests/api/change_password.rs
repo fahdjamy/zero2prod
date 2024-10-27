@@ -16,8 +16,6 @@ async fn you_must_be_logged_in_to_see_the_change_password_form() {
 
 #[tokio::test]
 async fn you_must_be_logged_in_to_change_password() {
-    let app = spawn_app().await;
-
     // Arrange
     let app = spawn_app().await;
     let new_password = Uuid::new_v4().to_string();
@@ -62,4 +60,35 @@ async fn new_password_fields_must_match() {
     // Act - Part 3 - Follow the redirect
     let html_page = app.get_change_password_html().await;
     assert!(html_page.contains("<p><i>The new password doesn't match</i></p>"));
+}
+
+#[tokio::test]
+async fn current_password_must_be_valid() {
+    // Arrange
+    let app = spawn_app().await;
+    let new_password = Uuid::new_v4().to_string();
+    let wrong_password = Uuid::new_v4().to_string();
+
+    // Act 1 - Login
+    app.post_login(&serde_json::json!({
+        "username": &app.test_user.username,
+        "password": &app.test_user.password
+    }))
+    .await;
+
+    // Act 2 - Try changing the password
+    let response = app
+        .post_change_password(&serde_json::json!({
+            "current_password": &wrong_password,
+            "new_password": &new_password,
+            "new_password_check": &new_password,
+        }))
+        .await;
+
+    // Assert
+    assert_is_redirect_to(&response, "/admin/password");
+
+    // Assert - Follow redirect link and check error msg
+    let html_page = dbg!(app.get_change_password_html().await);
+    assert!(html_page.contains("<p><i>The current password is incorrect</i></p>"));
 }
