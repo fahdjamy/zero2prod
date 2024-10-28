@@ -24,6 +24,12 @@ pub async fn change_password(
         return Ok(see_other("/login"));
     };
     let user_id = user_id.unwrap();
+    let new_password_len = form.0.new_password.expose_secret().len();
+
+    if new_password_len < 12 || new_password_len > 129 {
+        FlashMessage::error("The password size must be between 12 and 129").send();
+        return Ok(see_other("/admin/password"));
+    }
 
     if form.new_password.expose_secret() != form.new_password_check.expose_secret() {
         FlashMessage::error("The new password doesn't match").send();

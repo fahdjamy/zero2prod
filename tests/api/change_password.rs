@@ -89,6 +89,36 @@ async fn current_password_must_be_valid() {
     assert_is_redirect_to(&response, "/admin/password");
 
     // Assert - Follow redirect link and check error msg
-    let html_page = dbg!(app.get_change_password_html().await);
+    let html_page = app.get_change_password_html().await;
     assert!(html_page.contains("<p><i>The current password is incorrect</i></p>"));
+}
+
+#[tokio::test]
+async fn new_password_size_must_be_valid() {
+    let app = spawn_app().await;
+    let new_password = "less-size";
+
+    // Act 1 - Login
+    app.post_login(&serde_json::json!({
+        "username": &app.test_user.username,
+        "password": &app.test_user.password
+    }))
+    .await;
+
+    // Act 2 - Try changing the password
+    let response = app
+        .post_change_password(&serde_json::json!({
+            "current_password": &app.test_user.password,
+            "new_password": &new_password,
+            "new_password_check": &new_password,
+        }))
+        .await;
+
+    // Assert
+    assert_is_redirect_to(&response, "/admin/password");
+
+    // Assert - Follow redirect link and check error msg
+    let html_page = app.get_change_password_html().await;
+    dbg!(&html_page);
+    assert!(html_page.contains("<p><i>The password size must be between 12 and 129</i></p>"));
 }
