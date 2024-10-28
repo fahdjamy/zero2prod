@@ -1,3 +1,4 @@
+use crate::authentication;
 use crate::authentication::{validate_credentials, AuthError, Credentials};
 use crate::routes::dashboard::get_username;
 use crate::session_state::TypedSession;
@@ -51,5 +52,9 @@ pub async fn change_password(
             AuthError::UnexpectedError(_) => Err(e500(err).into()),
         };
     };
-    todo!();
+    authentication::change_password(&pg_pool, user_id, form.0.new_password)
+        .await
+        .map_err(e500)?;
+    FlashMessage::error("Changed password successfully").send();
+    Ok(see_other("/admin/password"))
 }
