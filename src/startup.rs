@@ -1,3 +1,4 @@
+use crate::authentication::reject_anonymous_users;
 use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
 use crate::routes::dashboard::admin_dashboard;
@@ -9,6 +10,7 @@ use actix_session::storage::RedisSessionStore;
 use actix_session::SessionMiddleware;
 use actix_web::cookie::Key;
 use actix_web::dev::Server;
+use actix_web::middleware::from_fn;
 use actix_web::web::Data;
 use actix_web::{web, App, HttpServer};
 use actix_web_flash_messages::storage::CookieMessageStore;
@@ -143,10 +145,16 @@ pub async fn run(
             .route("/health_check", web::get().to(check_health))
             .route("/subscriptions/confirm", web::get().to(confirm))
             .route("/newsletters", web::post().to(publish_newsletter))
-            .route("/admin/logout", web::post().to(logout))
-            .route("/admin/dashboard", web::get().to(admin_dashboard))
-            .route("/admin/password", web::post().to(change_password))
-            .route("/admin/password", web::get().to(change_password_form))
+            // introduce a scope for /admin routes
+            .service(
+                web::scope("/admin")
+                    // add a middleware only scoped to the admin routes
+                    .wrap(from_fn(reject_anonymous_users))
+                    .route("/logout", web::post().to(logout))
+                    .route("/dashboard", web::get().to(admin_dashboard))
+                    .route("/password", web::post().to(change_password))
+                    .route("/password", web::get().to(change_password_form)),
+            )
             .app_data(db_pool.clone())
             .app_data(base_url.clone())
             .app_data(email_client.clone())

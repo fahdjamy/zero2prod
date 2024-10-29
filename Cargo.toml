@@ -16,7 +16,10 @@ config = "0.14.0"
 chrono = { version = "0.4.38", default-features = false, features = ["clock"] }
 # serde adds the ability to serialize and deserialize UUID
 uuid = { version = "1.10.0", features = ["v4", "serde"] }
+
 actix-web = "4"
+actix-web-lab = "0.23.0"
+
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 # Designed as a drop-in replacement of actix-web’s Logger, just based on tracing instead of log
 tracing-actix-web = "0.7.11"# automatically adds a requestId in all calls
