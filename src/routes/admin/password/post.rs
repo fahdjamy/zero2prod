@@ -22,7 +22,7 @@ pub async fn change_password(
     let user_id = user_id.into_inner();
 
     let new_password_len = form.0.new_password.expose_secret().len();
-    if new_password_len < 12 || new_password_len > 129 {
+    if !(12..=129).contains(&new_password_len) {
         FlashMessage::error("The password size must be between 12 and 129").send();
         return Ok(see_other("/admin/password"));
     }
@@ -44,7 +44,7 @@ pub async fn change_password(
                 FlashMessage::error("The current password is incorrect").send();
                 Ok(see_other("/admin/password"))
             }
-            AuthError::UnexpectedError(_) => Err(e500(err).into()),
+            AuthError::UnexpectedError(_) => Err(e500(err)),
         };
     };
     authentication::change_password(&pg_pool, *user_id, form.0.new_password)
