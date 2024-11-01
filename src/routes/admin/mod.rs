@@ -1,3 +1,8 @@
 pub mod dashboard;
-pub mod logout;
-pub mod password;
+mod logout;
+mod newsletter;
+mod password;
+
+pub use logout::*;
+pub use newsletter::*;
+pub use password::*;
