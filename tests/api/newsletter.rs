@@ -29,7 +29,9 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
 
     // Act - Part 2 - Follow the redirect
     let html_page = app.get_publish_newsletter_html().await;
-    assert!(html_page.contains("<p><i>The newsletter issue has been published!</i></p>"));
+    assert!(
+        html_page.contains("<p><i>The newsletter issue has been published successfully.</i></p>")
+    );
     // Mock verifies on Drop that we haven't sent the newsletter email
 }
 
@@ -89,7 +91,9 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
 
     // Act - Part 2 - Follow the redirect
     let html_page = app.get_publish_newsletter_html().await;
-    assert!(html_page.contains("<p><i>The newsletter issue has been published!</i></p>"));
+    assert!(
+        html_page.contains("<p><i>The newsletter issue has been published successfully.</i></p>")
+    );
     // Mock verifies on Drop that we have sent the newsletter email
 }
 
@@ -121,7 +125,9 @@ async fn newsletter_creation_is_idempotent() {
 
     // Act - Part 2 - Follow the redirect
     let html_page = app.get_publish_newsletter_html().await;
-    assert!(html_page.contains("<p><i>The newsletter issue has been published!</i></p>"));
+    assert!(
+        html_page.contains("<p><i>The newsletter issue has been published successfully.</i></p>")
+    );
 
     // Act - Part 3 - Submit newsletter form **again**
     let response = app.post_publish_newsletter(&newsletter_request_body).await;
