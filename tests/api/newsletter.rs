@@ -128,7 +128,9 @@ async fn newsletter_creation_is_idempotent() {
 
     // Act - Part 4 - Follow the redirect
     let html_page = app.get_publish_newsletter_html().await;
-    assert!(html_page.contains("<p><i>The newsletter issue has been published!</i></p>"));
+    assert!(
+        html_page.contains("<p><i>The newsletter issue has been published successfully.</i></p>")
+    );
 
     // Mock verifies on Drop that we have sent the newsletter email **once**
 }
