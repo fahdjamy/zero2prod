@@ -5,6 +5,8 @@ use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 use wiremock::MockServer;
 use zero2prod::configuration::{get_configuration, DatabaseSettings};
+use zero2prod::email_client::EmailClient;
+use zero2prod::issue_delivery_worker::{try_execute_task, ExecutionOutcome};
 use zero2prod::startup::{get_connection_pool, Application};
 use zero2prod::telemetry::{get_subscriber, init_subscriber};
 
@@ -37,6 +39,7 @@ pub struct TestApp {
     pub db_pool: PgPool,
     pub test_user: TestUser,
     pub email_server: MockServer,
+    pub email_client: EmailClient,
     pub api_client: reqwest::Client,
 }
 
@@ -85,6 +88,7 @@ pub async fn spawn_app() -> TestApp {
         email_server,
         api_client: client,
         port: application_port,
+        email_client: configuration.email_client.client(),
         db_pool: get_connection_pool(&configuration.database),
         address: format!("http://127.0.0.1:{}", application_port),
     };
@@ -221,6 +225,19 @@ impl TestApp {
         let html = get_link(&body["HtmlBody"].as_str().unwrap());
         let plain_text = get_link(&body["TextBody"].as_str().unwrap());
         ConfirmationLinks { html, plain_text }
+    }
+
+    // a helper to consume all enqueued tasks
+    pub async fn dispatch_all_pending_emails(&self) {
+        loop {
+            if let ExecutionOutcome::TaskCompleted =
+                try_execute_task(&self.db_pool, &self.email_client)
+                    .await
+                    .unwrap()
+            {
+                break;
+            }
+        }
     }
 }
 
