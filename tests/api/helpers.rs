@@ -230,7 +230,7 @@ impl TestApp {
     // a helper to consume all enqueued tasks
     pub async fn dispatch_all_pending_emails(&self) {
         loop {
-            if let ExecutionOutcome::TaskCompleted =
+            if let ExecutionOutcome::EmptyQueue =
                 try_execute_task(&self.db_pool, &self.email_client)
                     .await
                     .unwrap()

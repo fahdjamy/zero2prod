@@ -13,9 +13,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Panic if we can't read configuration
     let configuration = get_configuration().expect("Failed to read configuration.");
-
     let application = Application::build(configuration.clone()).await?;
-
     let application_task = tokio::spawn(application.run_until_stopped());
     let worker_task = tokio::spawn(run_worker_until_stopped(configuration));
 
@@ -28,11 +26,11 @@ async fn main() -> anyhow::Result<()> {
     // if one branch blocks the thread, all other expressions will be unable to continue.
     // If parallelism is required, spawn each async expression using tokio::spawn and pass the join
     // handle to select!.”
-    //
+
     tokio::select! {
-        outcome = worker_task => report_exit("API", outcome),
         outcome = application_task => report_exit("API", outcome),
-    }
+        outcome = worker_task =>  report_exit("Background worker", outcome),
+    };
 
     Ok(())
 }
@@ -40,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
 fn report_exit(task_name: &str, outcome: Result<Result<(), impl Debug + Display>, JoinError>) {
     match outcome {
         Ok(Ok(())) => {
-            tracing::info!("{} has existed successfully", task_name)
+            tracing::info!("{} has exited", task_name)
         }
         Ok(Err(e)) => {
             tracing::error!(
@@ -54,7 +52,7 @@ fn report_exit(task_name: &str, outcome: Result<Result<(), impl Debug + Display>
             tracing::error!(
                 error.cause_chain = ?e,
                 error.message = %e,
-                "{} failed to complete",
+                "{}' task failed to complete",
                 task_name
             )
         }

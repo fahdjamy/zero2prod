@@ -2,7 +2,7 @@ use crate::configuration::Settings;
 use crate::domain::SubscriberEmail;
 use crate::email_client::EmailClient;
 use crate::startup::get_connection_pool;
-use sqlx::{Executor, PgPool, Postgres, Transaction};
+use sqlx::{PgPool, Postgres, Transaction};
 use std::time::Duration;
 use tracing::field::display;
 use tracing::Span;
@@ -21,7 +21,7 @@ async fn worker_loop(pg_pool: PgPool, email_client: EmailClient) -> Result<(), a
     loop {
         match try_execute_task(&pg_pool, &email_client).await {
             Ok(ExecutionOutcome::EmptyQueue) => {
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                tokio::time::sleep(Duration::from_secs(10)).await;
             }
             Err(_) => {
                 // if we experience a transient failure18, we need to sleep for a while to
@@ -51,48 +51,49 @@ pub async fn try_execute_task(
     pool: &PgPool,
     email_client: &EmailClient,
 ) -> Result<ExecutionOutcome, anyhow::Error> {
-    let task = deque_task(pool).await?;
+    let task = dequeue_task(pool).await?;
     if task.is_none() {
         return Ok(ExecutionOutcome::EmptyQueue);
     }
-    if let Some((transaction, issue_id, email)) = task {
-        Span::current()
-            .record("newsletter_issue_id", &display(issue_id))
-            .record("subscriber_email", &display(&email));
-        match SubscriberEmail::parse(email.clone()) {
-            Ok(email) => {
-                let issue = get_issue(&pool, issue_id).await?;
-                if let Err(e) = email_client
-                    .send_email(
-                        &email,
-                        &issue.title,
-                        &issue.html_content,
-                        &issue.text_content,
-                    )
-                    .await
-                {
-                    tracing::error!(
-                        error.cause_chain = ?e,
-                        error.message = %e,
-                        "Failed to deliver issue to a confirmed subscriber. Skipping.",
-                    );
-                }
-            }
-            Err(e) => {
+    let (transaction, issue_id, email) = task.unwrap();
+    Span::current()
+        .record("newsletter_issue_id", display(issue_id))
+        .record("subscriber_email", display(&email));
+    match SubscriberEmail::parse(email.clone()) {
+        Ok(email) => {
+            let issue = get_issue(pool, issue_id).await?;
+            if let Err(e) = email_client
+                .send_email(
+                    &email,
+                    &issue.title,
+                    &issue.html_content,
+                    &issue.text_content,
+                )
+                .await
+            {
                 tracing::error!(
                     error.cause_chain = ?e,
                     error.message = %e,
-                    "Skipping a confirmed subscriber. Their stored details are invalid.",
-                )
+                    "Failed to deliver issue to a confirmed subscriber. Skipping.",
+                );
             }
         }
-        delete_task(transaction, issue_id, &email).await?;
+        Err(e) => {
+            tracing::error!(
+                error.cause_chain = ?e,
+                error.message = %e,
+                "Skipping a confirmed subscriber. Their stored contact details are invalid",
+            );
+        }
     }
+    delete_task(transaction, issue_id, &email).await?;
     Ok(ExecutionOutcome::TaskCompleted)
 }
 
 #[tracing::instrument(skip_all)]
-async fn deque_task(pool: &PgPool) -> Result<Option<(PgTransaction, Uuid, String)>, anyhow::Error> {
+async fn dequeue_task(
+    pool: &PgPool,
+) -> Result<Option<(PgTransaction, Uuid, String)>, anyhow::Error> {
     let mut tx: PgTransaction = pool.begin().await?;
     let row = sqlx::query!(
         r#"
@@ -119,7 +120,7 @@ async fn delete_task(
     issue_id: Uuid,
     email: &str,
 ) -> Result<(), anyhow::Error> {
-    let query = sqlx::query!(
+    sqlx::query!(
         r#"
         DELETE FROM issue_delivery_queue
         WHERE 
@@ -128,8 +129,9 @@ async fn delete_task(
         "#,
         issue_id,
         email
-    );
-    transaction.execute(query).await?;
+    )
+    .execute(&mut *transaction)
+    .await?;
     transaction.commit().await?;
     Ok(())
 }
